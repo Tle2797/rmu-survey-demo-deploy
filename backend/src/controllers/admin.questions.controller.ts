@@ -1,4 +1,9 @@
 import { db } from "../config/db";
+import {
+  compactQuestionDisplayOrders,
+  parseQuestionDisplayOrder,
+  reorderQuestionDisplayOrders,
+} from "../utils/question-ordering";
 import { getActiveSurvey } from "../utils/surveys";
 
 function parseForce(value: unknown) {
@@ -11,14 +16,23 @@ async function getCentralQuestionUsage(questionId: number) {
     `
     SELECT
       q.id,
+      q.survey_id,
       q.text,
-      COUNT(a.id)::int AS answer_count,
-      COUNT(DISTINCT a.response_id)::int AS response_count
+      q.type,
+      q.display_order,
+      COUNT(a.id) FILTER (
+        WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+           OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+      )::int AS answer_count,
+      COUNT(DISTINCT a.response_id) FILTER (
+        WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+           OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+      )::int AS response_count
     FROM questions q
     LEFT JOIN answers a ON a.question_id = q.id
     WHERE q.id = $1
       AND q.scope = 'central'
-    GROUP BY q.id, q.text
+    GROUP BY q.id, q.survey_id, q.text, q.type, q.display_order
     `,
     [questionId],
   );
@@ -54,9 +68,20 @@ export async function listCentralQuestions({ query }: any) {
       q.status,
       q.created_at,
       q.updated_at,
-      COUNT(a.id)::int AS answer_count,
-      COUNT(DISTINCT a.response_id)::int AS response_count,
-      (COUNT(a.id) > 0) AS has_answers
+      COUNT(a.id) FILTER (
+        WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+           OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+      )::int AS answer_count,
+      COUNT(DISTINCT a.response_id) FILTER (
+        WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+           OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+      )::int AS response_count,
+      (
+        COUNT(a.id) FILTER (
+          WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+             OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+        ) > 0
+      ) AS has_answers
     FROM questions q
     LEFT JOIN answers a ON a.question_id = q.id
     WHERE q.scope = 'central'
@@ -82,28 +107,69 @@ export async function listCentralQuestions({ query }: any) {
 
 export async function createCentralQuestion({ body, set }: any) {
   const { survey_id, text, type, display_order } = body;
+  const surveyId = Number(survey_id);
+  const requestedDisplayOrder = parseQuestionDisplayOrder(display_order);
 
   const trimmedText = (text ?? "").trim();
   if (!trimmedText) {
     set.status = 400;
     return { message: "Question text is required" };
   }
-  if (!survey_id) {
+  if (!Number.isFinite(surveyId) || surveyId <= 0) {
     set.status = 400;
     return { message: "survey_id is required" };
   }
+  if (!["rating", "text"].includes(type)) {
+    set.status = 400;
+    return { message: "Invalid type" };
+  }
+  if (
+    typeof requestedDisplayOrder === "number" &&
+    Number.isNaN(requestedDisplayOrder)
+  ) {
+    set.status = 400;
+    return { message: "Invalid display_order" };
+  }
 
-  const ins = await db.query(
-    `
-    INSERT INTO questions (survey_id, scope, department_id, type, text, display_order, status)
-    VALUES ($1, 'central', NULL, $2, $3, $4, 'active')
-    RETURNING id, survey_id, scope, type, text, display_order, status, created_at, updated_at
-    `,
-    [survey_id, type, trimmedText, display_order || 0],
-  );
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
 
-  set.status = 201;
-  return ins.rows[0];
+    const ins = await client.query(
+      `
+      INSERT INTO questions (survey_id, scope, department_id, type, text, display_order, status)
+      VALUES ($1, 'central', NULL, $2, $3, 0, 'active')
+      RETURNING id
+      `,
+      [surveyId, type, trimmedText],
+    );
+
+    const id = Number(ins.rows[0].id);
+    await reorderQuestionDisplayOrders(client, {
+      questionId: id,
+      surveyId,
+      scope: "central",
+      requestedOrder: requestedDisplayOrder ?? null,
+    });
+
+    const created = await client.query(
+      `
+      SELECT id, survey_id, scope, type, text, display_order, status, created_at, updated_at
+      FROM questions
+      WHERE id = $1
+      `,
+      [id],
+    );
+
+    await client.query("COMMIT");
+    set.status = 201;
+    return created.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function updateCentralQuestion({ params, body, set }: any) {
@@ -115,28 +181,87 @@ export async function updateCentralQuestion({ params, body, set }: any) {
 
   const { text, type, display_order } = body;
   const trimmedText = (text ?? "").trim();
+  const requestedDisplayOrder = parseQuestionDisplayOrder(display_order, true);
 
   if (!trimmedText) {
     set.status = 400;
     return { message: "Question text is required" };
   }
+  if (!["rating", "text"].includes(type)) {
+    set.status = 400;
+    return { message: "Invalid type" };
+  }
+  if (
+    typeof requestedDisplayOrder === "number" &&
+    Number.isNaN(requestedDisplayOrder)
+  ) {
+    set.status = 400;
+    return { message: "Invalid display_order" };
+  }
 
-  const upd = await db.query(
-    `
-    UPDATE questions
-    SET text = $2, type = $3, display_order = $4, updated_at = NOW()
-    WHERE id = $1 AND scope = 'central'
-    RETURNING id, survey_id, scope, type, text, display_order, status, created_at, updated_at
-    `,
-    [id, trimmedText, type, display_order || 0],
-  );
-
-  if ((upd.rowCount ?? 0) === 0) {
+  const usage = await getCentralQuestionUsage(id);
+  if (!usage) {
     set.status = 404;
     return { message: "Central question not found" };
   }
 
-  return upd.rows[0];
+  if (usage.answer_count > 0 && type !== usage.type) {
+    set.status = 409;
+    return {
+      message:
+        "คำถามนี้มีผู้ประเมินตอบแล้ว จึงไม่สามารถเปลี่ยนรูปแบบคำตอบได้",
+      answer_count: usage.answer_count,
+      response_count: usage.response_count,
+      has_answers: true,
+    };
+  }
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const upd = await client.query(
+      `
+      UPDATE questions
+      SET text = $2, type = $3, updated_at = NOW()
+      WHERE id = $1 AND scope = 'central'
+      RETURNING id
+      `,
+      [id, trimmedText, type],
+    );
+
+    if ((upd.rowCount ?? 0) === 0) {
+      await client.query("ROLLBACK");
+      set.status = 404;
+      return { message: "Central question not found" };
+    }
+
+    if (requestedDisplayOrder !== undefined) {
+      await reorderQuestionDisplayOrders(client, {
+        questionId: id,
+        surveyId: Number(usage.survey_id),
+        scope: "central",
+        requestedOrder: requestedDisplayOrder ?? null,
+      });
+    }
+
+    const updated = await client.query(
+      `
+      SELECT id, survey_id, scope, type, text, display_order, status, created_at, updated_at
+      FROM questions
+      WHERE id = $1
+      `,
+      [id],
+    );
+
+    await client.query("COMMIT");
+    return updated.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function toggleCentralQuestionActive({ params, set }: any) {
@@ -243,6 +368,11 @@ export async function deleteCentralQuestion({ params, query, set }: any) {
       set.status = 404;
       return { message: "Central question not found" };
     }
+
+    await compactQuestionDisplayOrders(client, {
+      surveyId: Number(usage.survey_id),
+      scope: "central",
+    });
 
     await client.query("COMMIT");
     return {

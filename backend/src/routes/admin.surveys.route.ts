@@ -14,7 +14,7 @@ export const adminSurveysRoute = new Elysia({
   .post("/", createSurvey, {
     body: t.Object({
       title: t.String(),
-      description: t.Optional(t.String()),
+      description: t.Optional(t.Union([t.String(), t.Null()])),
       year_be: t.Numeric(),
     }),
   })
@@ -22,7 +22,7 @@ export const adminSurveysRoute = new Elysia({
     params: t.Object({ id: t.String() }),
     body: t.Object({
       title: t.String(),
-      description: t.Optional(t.String()),
+      description: t.Optional(t.Union([t.String(), t.Null()])),
       year_be: t.Numeric(),
     }),
   })

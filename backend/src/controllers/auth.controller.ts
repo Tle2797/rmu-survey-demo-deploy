@@ -13,6 +13,10 @@ import {
   verifyToken,
   type JwtUser,
 } from "../utils/auth";
+import {
+  containsThaiCharacters,
+  USERNAME_THAI_VALIDATION_MESSAGE,
+} from "../utils/username";
 
 const TITLE_OPTIONS = new Set(["นาย", "นาง", "นางสาว"]);
 const PUBLIC_REGISTER_ROLES = new Set(["dept_head", "staff"]);
@@ -32,6 +36,11 @@ export async function registerUser({ body, set }: any) {
   const password = String(payload?.password || "");
   const confirmPassword = String(payload?.confirmPassword || "");
   const email = String(payload?.email || "").trim().toLowerCase();
+
+  if (containsThaiCharacters(username)) {
+    set.status = 400;
+    return { message: USERNAME_THAI_VALIDATION_MESSAGE };
+  }
 
   if (!PUBLIC_REGISTER_ROLES.has(role)) {
     set.status = 400;
@@ -92,25 +101,84 @@ export async function registerUser({ body, set }: any) {
     return { message: "ไม่พบหน่วยงานที่เลือก" };
   }
 
+  const existingEmail = await db.query(
+    `
+    SELECT id, username, approval_status, registration_source
+    FROM users
+    WHERE lower(email) = $1
+    LIMIT 1
+    `,
+    [email],
+  );
+  const rejectedSelfRegistration =
+    existingEmail.rows[0]?.registration_source === "self" &&
+    existingEmail.rows[0]?.approval_status === "rejected"
+      ? existingEmail.rows[0]
+      : null;
+
   const dupUsername = await db.query(
-    `SELECT 1 FROM users WHERE username = $1 LIMIT 1`,
+    `SELECT id FROM users WHERE username = $1 LIMIT 1`,
     [username],
   );
-  if ((dupUsername.rowCount ?? 0) > 0) {
+  const duplicatedUsername = dupUsername.rows[0];
+  if (
+    duplicatedUsername &&
+    (!rejectedSelfRegistration || duplicatedUsername.id !== rejectedSelfRegistration.id)
+  ) {
     set.status = 409;
     return { message: "ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว" };
   }
 
-  const dupEmail = await db.query(
-    `SELECT 1 FROM users WHERE lower(email) = $1 LIMIT 1`,
-    [email],
-  );
-  if ((dupEmail.rowCount ?? 0) > 0) {
+  if (existingEmail.rows[0] && !rejectedSelfRegistration) {
     set.status = 409;
     return { message: "อีเมลนี้มีอยู่ในระบบแล้ว" };
   }
 
   const passwordHash = await hashPassword(password);
+
+  if (rejectedSelfRegistration) {
+    const updateRes = await db.query(
+      `
+      UPDATE users
+      SET username = $2,
+          password_hash = $3,
+          role = $4,
+          department_id = $5,
+          is_active = false,
+          title = $6,
+          first_name = $7,
+          last_name = $8,
+          email = $9,
+          approval_status = 'pending',
+          registration_source = 'self',
+          approval_reviewed_by = NULL,
+          approval_reviewed_at = NULL,
+          rejected_reason = NULL,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, username, email, role, department_id, title, first_name, last_name, approval_status, created_at
+      `,
+      [
+        rejectedSelfRegistration.id,
+        username,
+        passwordHash,
+        role,
+        departmentId,
+        title,
+        firstName,
+        lastName,
+        email,
+      ],
+    );
+
+    set.status = 201;
+    return {
+      message: "ลงทะเบียนสำเร็จ กรุณารอการอนุมัติจากผู้ดูแลระบบ",
+      item: updateRes.rows[0],
+      resubmitted: true,
+    };
+  }
+
   const insertRes = await db.query(
     `
     INSERT INTO users (
@@ -152,6 +220,11 @@ export async function login({ body, set }: any) {
   const payload = body as any;
   const username = String(payload?.username || "").trim();
   const password = String(payload?.password || "");
+
+  if (containsThaiCharacters(username)) {
+    set.status = 400;
+    return { message: USERNAME_THAI_VALIDATION_MESSAGE };
+  }
 
   if (!username || !password) {
     set.status = 400;
@@ -297,6 +370,11 @@ export async function updateProfile({ request, body, set }: any) {
   const last_name =
     b?.last_name !== undefined ? (b.last_name ? String(b.last_name).trim() : null) : null;
   const password = b?.password !== undefined ? String(b.password ?? "") : undefined;
+
+  if (containsThaiCharacters(username)) {
+    set.status = 400;
+    return { message: USERNAME_THAI_VALIDATION_MESSAGE };
+  }
 
   if (!username) {
     set.status = 400;

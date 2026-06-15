@@ -191,24 +191,27 @@ export default function SurveyDepartmentPage({
     });
   }, [answers, department, group, hasQuestions, questions, token]);
 
+  const ratingQuestions = useMemo(
+    () => questions.filter((question) => question.type === "rating"),
+    [questions],
+  );
   const totalQuestions = questions.length;
-  const answeredQuestionCount = useMemo(() => {
+  const totalRequiredQuestions = ratingQuestions.length;
+  const answeredRequiredQuestionCount = useMemo(() => {
     return questions.reduce((total, question) => {
+      if (question.type !== "rating") return total;
+
       const answer = answers[question.id];
       if (!answer) return total;
 
-      if (question.type === "rating") {
-        return typeof answer.rating === "number" ? total + 1 : total;
-      }
-
-      return answer.comment?.trim() ? total + 1 : total;
+      return typeof answer.rating === "number" ? total + 1 : total;
     }, 0);
   }, [answers, questions]);
   const progressPercent =
-    totalQuestions > 0
-      ? Math.round((answeredQuestionCount / totalQuestions) * 100)
-      : 0;
-  const progressText = `ตอบแบบประเมินแล้ว ${answeredQuestionCount}/${totalQuestions} ข้อ`;
+    totalRequiredQuestions > 0
+      ? Math.round((answeredRequiredQuestionCount / totalRequiredQuestions) * 100)
+      : 100;
+  const progressText = `ตอบแบบประเมินแล้ว ${answeredRequiredQuestionCount}/${totalQuestions} ข้อ`;
 
   const surveyYearLabel =
     survey?.year_be && Number.isFinite(survey.year_be)
@@ -235,11 +238,16 @@ export default function SurveyDepartmentPage({
         department_id: deptId,
         respondent_group: group,
         token,
-        answers: questions.map((question) => ({
-          question_id: question.id,
-          rating: question.type === "rating" ? answers[question.id]?.rating : undefined,
-          comment: question.type === "text" ? answers[question.id]?.comment : undefined,
-        })),
+        answers: questions
+          .map((question) => ({
+            question_id: question.id,
+            rating: question.type === "rating" ? answers[question.id]?.rating : undefined,
+            comment:
+              question.type === "text"
+                ? answers[question.id]?.comment?.trim()
+                : undefined,
+          }))
+          .filter((answer) => answer.rating !== undefined || Boolean(answer.comment)),
       };
 
       await apiPost<{
@@ -364,7 +372,7 @@ export default function SurveyDepartmentPage({
                 <h2 className="mt-1 text-base font-semibold text-slate-900 sm:text-xl">{progressText}</h2>
               </div>
               <div className="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-700">
-                ทั้งหมด {totalQuestions} ข้อ
+                  คำถามทั้งหมด {totalQuestions} ข้อ
               </div>
             </div>
             <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
@@ -409,7 +417,12 @@ export default function SurveyDepartmentPage({
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-[15px] font-semibold leading-6 text-slate-900 sm:text-lg sm:leading-7">{question.text}</h3>
+                    <h3 className="text-[15px] font-semibold leading-6 text-slate-900 sm:text-lg sm:leading-7">
+                      {question.text}
+                      {question.type === "rating" ? (
+                        <span className="ml-1 text-red-500" aria-label="จำเป็นต้องเลือก">*</span>
+                      ) : null}
+                    </h3>
                   </div>
                 </div>
 

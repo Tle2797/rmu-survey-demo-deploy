@@ -4,6 +4,11 @@ import {
   canAccessDepartment,
   canManageDepartmentQuestion,
 } from "../utils/authorization";
+import {
+  compactQuestionDisplayOrders,
+  parseQuestionDisplayOrder,
+  reorderQuestionDisplayOrders,
+} from "../utils/question-ordering";
 import { getActiveSurvey } from "../utils/surveys";
 
 function parseForce(value: unknown) {
@@ -35,16 +40,30 @@ async function getManagedDepartmentQuestion(
     `
     SELECT
       q.id,
+      q.survey_id,
       q.text,
+      q.type,
       q.scope,
       q.department_id,
-      COUNT(a.id)::int AS answer_count,
-      COUNT(DISTINCT a.response_id)::int AS response_count,
-      (COUNT(a.id) > 0) AS has_answers
+      q.display_order,
+      COUNT(a.id) FILTER (
+        WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+           OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+      )::int AS answer_count,
+      COUNT(DISTINCT a.response_id) FILTER (
+        WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+           OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+      )::int AS response_count,
+      (
+        COUNT(a.id) FILTER (
+          WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+             OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+        ) > 0
+      ) AS has_answers
     FROM questions q
     LEFT JOIN answers a ON a.question_id = q.id
     WHERE q.id = $1
-    GROUP BY q.id, q.text, q.scope, q.department_id
+    GROUP BY q.id, q.survey_id, q.text, q.type, q.scope, q.department_id, q.display_order
     `,
     [questionId],
   );
@@ -119,9 +138,20 @@ export async function listDashboardQuestions({ params, request, set }: any) {
       q.display_order,
       q.department_id,
       ($3::boolean AND q.scope = 'central') AS is_selected,
-      COUNT(a.id)::int AS answer_count,
-      COUNT(DISTINCT a.response_id)::int AS response_count,
-      (COUNT(a.id) > 0) AS has_answers
+      COUNT(a.id) FILTER (
+        WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+           OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+      )::int AS answer_count,
+      COUNT(DISTINCT a.response_id) FILTER (
+        WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+           OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+      )::int AS response_count,
+      (
+        COUNT(a.id) FILTER (
+          WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
+             OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+        ) > 0
+      ) AS has_answers
     FROM questions q
     LEFT JOIN responses r
       ON r.survey_id = q.survey_id
@@ -290,10 +320,7 @@ export async function createDashboardQuestion({ params, body, request, set }: an
   const payload = body as Record<string, unknown>;
   const text = String(payload.text ?? "").trim();
   const type = payload.type as "rating" | "text";
-  const displayOrder =
-    payload.display_order === undefined || payload.display_order === null
-      ? null
-      : Number(payload.display_order);
+  const displayOrder = parseQuestionDisplayOrder(payload.display_order);
 
   if (!text) {
     set.status = 400;
@@ -306,8 +333,8 @@ export async function createDashboardQuestion({ params, body, request, set }: an
   }
 
   if (
-    displayOrder !== null &&
-    (!Number.isFinite(displayOrder) || displayOrder < 0)
+    typeof displayOrder === "number" &&
+    Number.isNaN(displayOrder)
   ) {
     set.status = 400;
     return { message: "Invalid display_order" };
@@ -321,19 +348,40 @@ export async function createDashboardQuestion({ params, body, request, set }: an
 
   const surveyId = survey.id;
 
-  const ins = await db.query(
-    `
-    INSERT INTO questions
-      (survey_id, department_id, scope, type, text, status, display_order)
-    VALUES
-      ($1, $2, 'department', $3, $4, 'active', $5)
-    RETURNING id
-    `,
-    [surveyId, departmentId, type, text, displayOrder],
-  );
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
 
-  set.status = 201;
-  return { message: "Created", id: ins.rows[0].id };
+    const ins = await client.query(
+      `
+      INSERT INTO questions
+        (survey_id, department_id, scope, type, text, status, display_order)
+      VALUES
+        ($1, $2, 'department', $3, $4, 'active', 0)
+      RETURNING id
+      `,
+      [surveyId, departmentId, type, text],
+    );
+
+    const id = Number(ins.rows[0].id);
+    await reorderQuestionDisplayOrders(client, {
+      questionId: id,
+      surveyId,
+      scope: "department",
+      departmentId,
+      requestedOrder: displayOrder ?? null,
+    });
+
+    await client.query("COMMIT");
+
+    set.status = 201;
+    return { message: "Created", id };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function updateDashboardQuestion({ params, body, request, set }: any) {
@@ -357,11 +405,26 @@ export async function updateDashboardQuestion({ params, body, request, set }: an
   const type = payload.type as "rating" | "text" | undefined;
   const status = payload.status as "active" | "inactive" | undefined;
   const displayOrder =
-    payload.display_order === undefined ? undefined : Number(payload.display_order);
+    parseQuestionDisplayOrder(payload.display_order, true);
 
   if (type !== undefined && !["rating", "text"].includes(type)) {
     set.status = 400;
     return { message: "Invalid type" };
+  }
+
+  if (
+    type !== undefined &&
+    managed.question.answer_count > 0 &&
+    type !== managed.question.type
+  ) {
+    set.status = 409;
+    return {
+      message:
+        "คำถามนี้มีผู้ประเมินตอบแล้ว จึงไม่สามารถเปลี่ยนรูปแบบคำตอบได้",
+      answer_count: managed.question.answer_count,
+      response_count: managed.question.response_count,
+      has_answers: true,
+    };
   }
 
   if (status !== undefined && !["active", "inactive"].includes(status)) {
@@ -370,8 +433,8 @@ export async function updateDashboardQuestion({ params, body, request, set }: an
   }
 
   if (
-    displayOrder !== undefined &&
-    (!Number.isFinite(displayOrder) || displayOrder < 0)
+    typeof displayOrder === "number" &&
+    Number.isNaN(displayOrder)
   ) {
     set.status = 400;
     return { message: "Invalid display_order" };
@@ -393,27 +456,46 @@ export async function updateDashboardQuestion({ params, body, request, set }: an
     fields.push(`status = $${idx++}`);
     values.push(status);
   }
-  if (displayOrder !== undefined) {
-    fields.push(`display_order = $${idx++}`);
-    values.push(displayOrder);
-  }
-
-  if (fields.length === 0) {
+  if (fields.length === 0 && displayOrder === undefined) {
     set.status = 400;
     return { message: "No fields to update" };
   }
 
   values.push(id);
 
-  await db.query(
-    `
-    UPDATE questions
-    SET ${fields.join(", ")}
-    WHERE id = $${idx}
-    RETURNING id
-    `,
-    values,
-  );
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    if (fields.length > 0) {
+      await client.query(
+        `
+        UPDATE questions
+        SET ${fields.join(", ")}
+        WHERE id = $${idx}
+        RETURNING id
+        `,
+        values,
+      );
+    }
+
+    if (displayOrder !== undefined) {
+      await reorderQuestionDisplayOrders(client, {
+        questionId: id,
+        surveyId: Number(managed.question.survey_id),
+        scope: "department",
+        departmentId: managed.departmentId,
+        requestedOrder: displayOrder ?? null,
+      });
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 
   return { message: "Updated" };
 }
@@ -491,6 +573,12 @@ export async function deleteDashboardQuestion({ params, query, request, set }: a
       set.status = 404;
       return { message: "Department question not found" };
     }
+
+    await compactQuestionDisplayOrders(client, {
+      surveyId: Number(managed.question.survey_id),
+      scope: "department",
+      departmentId: managed.departmentId,
+    });
 
     await client.query("COMMIT");
     return {

@@ -3,6 +3,11 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --font-geist-sans:
+    "Segoe UI", "Noto Sans Thai", "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-geist-mono:
+    "Cascadia Code", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono",
+    monospace;
 }
 
 @theme inline {
@@ -23,6 +28,40 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), sans-serif;
+}
+
+.login-mobile-card-logo {
+  display: none;
+}
+
+@media (max-width: 767px) and (orientation: portrait) {
+  .login-mobile-card-logo {
+    display: flex;
+    margin-bottom: 0.9rem;
+  }
+
+  .login-mobile-card-logo-image {
+    width: 4.25rem;
+    height: 4.25rem;
+  }
+
+  .login-card-heading {
+    margin-bottom: 1.35rem;
+    text-align: center;
+  }
+
+  .login-card-title {
+    font-size: 1.35rem;
+    line-height: 1.25;
+  }
+
+  .login-card-subtitle {
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 0.35rem;
+    max-width: 16rem;
+    line-height: 1.6;
+  }
 }
 
 @media (max-width: 380px) {

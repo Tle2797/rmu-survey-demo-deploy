@@ -16,5 +16,8 @@
       ]
     }
   },
-  "terminal.integrated.defaultProfile.windows": "Command Prompt"
+  "terminal.integrated.defaultProfile.windows": "Command Prompt",
+  "intellicodeApiExamples.python.enabled": false,
+  "intellicodeApiExamples.typescript.enabled": false,
+  "intellicodeApiExamples.loggingLevel": "OFF"
 }

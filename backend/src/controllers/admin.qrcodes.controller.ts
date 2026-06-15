@@ -2,7 +2,7 @@ import { db } from "../config/db";
 import {
   generateCentralQRCodeAsset,
   generateDepartmentQRCodeAsset,
-  readPublicAssetBase64,
+  readQRCodeAssetBase64,
 } from "../services/qrcode";
 
 export async function listQRCodes() {
@@ -118,7 +118,7 @@ export async function downloadQRCode({ params, set }: any) {
   }
 
   const res = await db.query(
-    `SELECT image_path, type, department_id FROM qrcodes WHERE id = $1 LIMIT 1`,
+    `SELECT image_path, link_target, type, department_id FROM qrcodes WHERE id = $1 LIMIT 1`,
     [id]
   );
 
@@ -127,12 +127,12 @@ export async function downloadQRCode({ params, set }: any) {
     return { message: "QR code not found" };
   }
 
-  const { image_path, type, department_id } = res.rows[0];
+  const { image_path, link_target, type, department_id } = res.rows[0];
 
   const downloadName =
     type === "central" ? "qr_central.png" : `qr_dept_${department_id}.png`;
 
-  const base64 = readPublicAssetBase64(image_path);
+  const base64 = await readQRCodeAssetBase64(image_path, link_target);
   if (!base64) {
     set.status = 404;
     return { message: "File not found on disk" };

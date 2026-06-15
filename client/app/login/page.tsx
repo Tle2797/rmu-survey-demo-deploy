@@ -6,6 +6,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { apiPost } from "@/lib/api";
 import { getThaiAlertMessage } from "@/lib/alert-message";
+import {
+  containsThaiCharacters,
+  sanitizeUsernameInput,
+  USERNAME_THAI_VALIDATION_MESSAGE,
+} from "@/lib/username";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, User, UserPlus } from "lucide-react";
 import Swal from "sweetalert2";
@@ -42,8 +47,9 @@ export default function LoginPage() {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
+    const trimmedUsername = username.trim();
 
-    if (!username || !password) {
+    if (!trimmedUsername || !password) {
       await Swal.fire({
         icon: "warning",
         title: "กรอกข้อมูลไม่ครบ",
@@ -54,11 +60,25 @@ export default function LoginPage() {
       return;
     }
 
+    if (containsThaiCharacters(trimmedUsername)) {
+      await Swal.fire({
+        icon: "warning",
+        title: "กรอกชื่อผู้ใช้ไม่ถูกต้อง",
+        text: getThaiAlertMessage(
+          USERNAME_THAI_VALIDATION_MESSAGE,
+          "ชื่อผู้เข้าใช้งานระบบห้ามกรอกภาษาไทย",
+        ),
+        confirmButtonText: "ตกลง",
+        confirmButtonColor: "#0369a1",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
       const res = await apiPost<LoginRes>("/api/auth/login", {
-        username,
+        username: trimmedUsername,
         password,
       });
 
@@ -133,11 +153,22 @@ export default function LoginPage() {
         <section className="flex items-center justify-center px-6 py-10 sm:px-10">
           <div className="w-full max-w-md">
             <div className="rounded-3xl border border-sky-100 bg-white p-8 shadow-[0_16px_50px_rgba(15,23,42,0.08)]">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-slate-800">
+              <div className="login-mobile-card-logo mb-5 justify-center">
+                <Image
+                  src="/logos/rmu.png"
+                  alt="มหาวิทยาลัยราชภัฏมหาสารคาม"
+                  width={64}
+                  height={64}
+                  className="login-mobile-card-logo-image h-16 w-16 object-contain drop-shadow-sm"
+                  priority
+                />
+              </div>
+
+              <div className="login-card-heading mb-6">
+                <h2 className="login-card-title text-2xl font-bold text-slate-800">
                   เข้าสู่ระบบ
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="login-card-subtitle mt-1 text-sm text-slate-500">
                   ระบบประเมินความพึงพอใจการใช้บริการหน่วยงาน
                 </p>
               </div>
@@ -145,42 +176,38 @@ export default function LoginPage() {
               <form onSubmit={handleLogin} className="space-y-4">
                 {/* Username */}
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    ชื่อผู้ใช้
+                  <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <User size={16} className="text-slate-400" />
+                    ชื่อผู้ใช้เข้างานระบบ
                   </label>
                   <div className="relative">
-                    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-                      <User size={17} />
-                    </span>
                     <input
                       type="text"
                       autoComplete="username"
-                      placeholder="กรอกชื่อผู้ใช้"
                       value={username}
-                      onChange={(e) => setUsername(e.target.value)}
+                      onChange={(e) =>
+                        setUsername(sanitizeUsernameInput(e.target.value))
+                      }
                       suppressHydrationWarning
-                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-100"
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-100"
                     />
                   </div>
                 </div>
 
                 {/* Password */}
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <Lock size={16} className="text-slate-400" />
                     รหัสผ่าน
                   </label>
                   <div className="relative">
-                    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-                      <Lock size={17} />
-                    </span>
                     <input
                       type={showPwd ? "text" : "password"}
                       autoComplete="current-password"
-                      placeholder="กรอกรหัสผ่าน"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       suppressHydrationWarning
-                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-11 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-100"
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-4 pr-11 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-100"
                     />
                     <button
                       type="button"

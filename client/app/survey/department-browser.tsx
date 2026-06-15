@@ -198,7 +198,7 @@ export default function DepartmentBrowser({
                           setQuery(event.target.value);
                           setCurrentPage(1);
                         }}
-                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 pl-11 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50 sm:text-base"
+                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-left text-sm text-slate-800 placeholder:text-left placeholder:text-slate-400 shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50 sm:text-base"
                         autoComplete="off"
                       />
                     </div>

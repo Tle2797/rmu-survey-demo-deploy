@@ -1,6 +1,6 @@
 // backend/src/config/db.ts
 import {Pool} from "pg";
-import "dotenv/config" ;
+import "./env";
 
 // สร้าง connection pool
 export const db = new Pool({

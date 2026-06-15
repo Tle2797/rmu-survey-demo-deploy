@@ -1,4 +1,5 @@
 // backend/src/server.ts
+import "./config/env";
 import { app } from "./app";
 import {
   ensureDepartmentCentralQuestionTable,

@@ -30,6 +30,7 @@ function tryParseJsonMessage(message: string): string {
 }
 
 const exactTranslations: Record<string, string> = {
+  "username must not contain Thai characters": "ชื่อผู้เข้าใช้งานระบบห้ามกรอกภาษาไทย",
   "username/password is required": "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน",
   "username is required": "กรุณากรอกชื่อผู้ใช้",
   "username already exists": "ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว",

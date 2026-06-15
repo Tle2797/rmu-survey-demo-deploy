@@ -5,6 +5,377 @@ import { canAccessDepartment } from "../utils/authorization";
 import { getActiveSurvey } from "../utils/surveys";
 
 const REPORT_TIMEZONE = "Asia/Bangkok";
+const THAI_MONTH_SHORT = [
+  "ม.ค.",
+  "ก.พ.",
+  "มี.ค.",
+  "เม.ย.",
+  "พ.ค.",
+  "มิ.ย.",
+  "ก.ค.",
+  "ส.ค.",
+  "ก.ย.",
+  "ต.ค.",
+  "พ.ย.",
+  "ธ.ค.",
+];
+const THAI_WEEKDAY_SHORT = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+
+type YearlyDrilldownView = "year" | "month" | "week" | "day";
+
+type DrilldownAggregateRow = {
+  period_key: number | string | Date;
+  avg_rating: number | string | null;
+  band_label: string | null;
+  respondents_total: number | string;
+  student: number | string;
+  staff: number | string;
+  public: number | string;
+};
+
+type DrilldownPeriodRow = {
+  key: string;
+  label: string;
+  detail_label: string | null;
+  year_be: number | null;
+  month: number | null;
+  week_start: string | null;
+  week_end: string | null;
+  date: string | null;
+  avg_rating: number | null;
+  band_label: string | null;
+  respondents_total: number;
+  student: number;
+  staff: number;
+  public: number;
+  has_data: boolean;
+};
+
+function getCurrentBEYear() {
+  return new Date().getFullYear() + 543;
+}
+
+function parseView(value: unknown): YearlyDrilldownView {
+  const normalized = String(value ?? "year").trim().toLowerCase();
+  if (
+    normalized === "month" ||
+    normalized === "week" ||
+    normalized === "day"
+  ) {
+    return normalized;
+  }
+
+  return "year";
+}
+
+function parseIntValue(value: unknown) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function parseMonthValue(value: unknown) {
+  const parsed = parseIntValue(value);
+  return parsed !== null && parsed >= 1 && parsed <= 12 ? parsed : null;
+}
+
+function utcDate(year: number, month: number, day: number) {
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date.getTime());
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function toISODate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function toLocalISODate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseISODate(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+
+  const date = new Date(`${text}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatThaiDate(isoDate: string) {
+  const date = parseISODate(isoDate);
+  if (!date) return isoDate;
+
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = THAI_MONTH_SHORT[date.getUTCMonth()] ?? "";
+  return `${day} ${month}`;
+}
+
+function formatWeekDetail(weekStart: string, weekEnd: string) {
+  const start = parseISODate(weekStart);
+  const end = parseISODate(weekEnd);
+  if (!start || !end) return weekStart;
+
+  return `${formatThaiDate(toISODate(start))} - ${formatThaiDate(toISODate(end))}`;
+}
+
+function listWeeksForCalendarMonth(gregorianYear: number, month: number) {
+  const monthStart = utcDate(gregorianYear, month, 1);
+  const monthEnd = utcDate(gregorianYear, month + 1, 0);
+  const weeks: Array<{
+    weekStart: string;
+    weekEnd: string;
+    label: string;
+    detail: string;
+  }> = [];
+
+  let cursor = monthStart;
+  let index = 1;
+
+  while (cursor <= monthEnd) {
+    const weekStart = toISODate(cursor);
+    const unclippedWeekEnd = addDays(cursor, 6);
+    const weekEndDate = unclippedWeekEnd > monthEnd ? monthEnd : unclippedWeekEnd;
+    const weekEnd = toISODate(weekEndDate);
+
+    weeks.push({
+      weekStart,
+      weekEnd,
+      label: `สัปดาห์ ${index}`,
+      detail: formatWeekDetail(weekStart, weekEnd),
+    });
+
+    cursor = addDays(weekEndDate, 1);
+    index += 1;
+  }
+
+  return weeks;
+}
+
+function getClippedWeekEnd(weekStart: string, month: number) {
+  const start = parseISODate(weekStart);
+  if (!start) return null;
+
+  const monthEnd = utcDate(start.getUTCFullYear(), month + 1, 0);
+  const unclippedWeekEnd = addDays(start, 6);
+  return toISODate(unclippedWeekEnd > monthEnd ? monthEnd : unclippedWeekEnd);
+}
+
+async function getCalendarYearsForSurveyMonth(
+  departmentId: number,
+  yearBE: number,
+  month: number,
+) {
+  const res = await db.query(
+    `
+    SELECT DISTINCT EXTRACT(YEAR FROM r.responded_date)::int AS calendar_year
+    FROM responses r
+    JOIN surveys s ON s.id = r.survey_id
+    WHERE r.department_id = $1
+      AND s.year_be = $2
+      AND EXTRACT(MONTH FROM r.responded_date)::int = $3
+    ORDER BY calendar_year ASC
+    `,
+    [departmentId, yearBE, month],
+  );
+
+  const years = res.rows
+    .map((row) => Number(row.calendar_year))
+    .filter((year) => Number.isInteger(year) && year > 0);
+
+  return years.length > 0 ? years : [yearBE - 543];
+}
+
+function listDaysForRange(weekStart: string, weekEnd: string) {
+  const start = parseISODate(weekStart);
+  const end = parseISODate(weekEnd);
+  if (!start || !end || start > end) return [];
+
+  const dayCount =
+    Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+
+  return Array.from({ length: dayCount }, (_, index) => {
+    const date = addDays(start, index);
+    const isoDate = toISODate(date);
+    return {
+      date: isoDate,
+      label: THAI_WEEKDAY_SHORT[date.getUTCDay()] ?? isoDate,
+      detail: formatThaiDate(isoDate),
+    };
+  });
+}
+
+function normalizeAggregateRow(row: DrilldownAggregateRow | undefined) {
+  if (!row) {
+    return {
+      avg_rating: null,
+      band_label: null,
+      respondents_total: 0,
+      student: 0,
+      staff: 0,
+      public: 0,
+      has_data: false,
+    };
+  }
+
+  const avg =
+    row.avg_rating === null || row.avg_rating === undefined
+      ? null
+      : Number(row.avg_rating);
+
+  return {
+    avg_rating: avg !== null && Number.isFinite(avg) ? avg : null,
+    band_label: row.band_label ?? null,
+    respondents_total: Number(row.respondents_total ?? 0),
+    student: Number(row.student ?? 0),
+    staff: Number(row.staff ?? 0),
+    public: Number(row.public ?? 0),
+    has_data: Number(row.respondents_total ?? 0) > 0,
+  };
+}
+
+function mapAggregateByKey(rows: DrilldownAggregateRow[]) {
+  const map = new Map<string, DrilldownAggregateRow>();
+  rows.forEach((row) => {
+    const rawKey =
+      row.period_key instanceof Date
+        ? toLocalISODate(row.period_key)
+        : String(row.period_key);
+    map.set(rawKey.slice(0, 10), row);
+  });
+  return map;
+}
+
+async function queryPeriodRows(
+  periodExpression: string,
+  whereClause: string,
+  values: unknown[],
+) {
+  const res = await db.query(
+    `
+    WITH filtered_responses AS (
+      SELECT
+        r.id,
+        r.respondent_group,
+        r.responded_date,
+        s.year_be,
+        ${periodExpression} AS period_key
+      FROM responses r
+      JOIN surveys s ON s.id = r.survey_id
+      WHERE r.department_id = $1
+        ${whereClause}
+    ),
+    rating_answers AS (
+      SELECT
+        fr.id AS response_id,
+        a.rating
+      FROM filtered_responses fr
+      JOIN answers a ON a.response_id = fr.id
+      JOIN questions q ON q.id = a.question_id
+      WHERE q.type = 'rating'
+    ),
+    aggregated AS (
+      SELECT
+        fr.period_key,
+        ROUND(AVG(ra.rating)::numeric, 2) AS avg_rating,
+        COUNT(DISTINCT fr.id)::int AS respondents_total,
+        COUNT(DISTINCT fr.id) FILTER (WHERE fr.respondent_group = 'student')::int AS student,
+        COUNT(DISTINCT fr.id) FILTER (WHERE fr.respondent_group = 'staff')::int AS staff,
+        COUNT(DISTINCT fr.id) FILTER (WHERE fr.respondent_group = 'public')::int AS public
+      FROM filtered_responses fr
+      LEFT JOIN rating_answers ra ON ra.response_id = fr.id
+      GROUP BY fr.period_key
+    )
+    SELECT
+      aggregated.period_key::text AS period_key,
+      aggregated.avg_rating,
+      aggregated.respondents_total,
+      aggregated.student,
+      aggregated.staff,
+      aggregated.public,
+      rb.label_th AS band_label
+    FROM aggregated
+    LEFT JOIN LATERAL (
+      SELECT label_th
+      FROM rating_bands
+      WHERE aggregated.avg_rating IS NOT NULL
+        AND aggregated.avg_rating >= min_value
+        AND aggregated.avg_rating <= max_value
+      ORDER BY sort_order DESC
+      LIMIT 1
+    ) rb ON true
+    ORDER BY aggregated.period_key ASC
+    `,
+    values,
+  );
+
+  return res.rows as DrilldownAggregateRow[];
+}
+
+async function queryPeriodSummary(whereClause: string, values: unknown[]) {
+  const res = await db.query(
+    `
+    WITH filtered_responses AS (
+      SELECT
+        r.id,
+        r.respondent_group
+      FROM responses r
+      JOIN surveys s ON s.id = r.survey_id
+      WHERE r.department_id = $1
+        ${whereClause}
+    ),
+    rating_answers AS (
+      SELECT a.rating
+      FROM filtered_responses fr
+      JOIN answers a ON a.response_id = fr.id
+      JOIN questions q ON q.id = a.question_id
+      WHERE q.type = 'rating'
+    ),
+    summary AS (
+      SELECT
+        (SELECT COUNT(*)::int FROM filtered_responses) AS respondents_total,
+        (SELECT COUNT(*)::int FROM filtered_responses WHERE respondent_group = 'student') AS student,
+        (SELECT COUNT(*)::int FROM filtered_responses WHERE respondent_group = 'staff') AS staff,
+        (SELECT COUNT(*)::int FROM filtered_responses WHERE respondent_group = 'public') AS public,
+        ROUND((SELECT AVG(rating)::numeric FROM rating_answers), 2) AS overall_avg
+    )
+    SELECT
+      summary.*,
+      rb.label_th AS overall_band
+    FROM summary
+    LEFT JOIN LATERAL (
+      SELECT label_th
+      FROM rating_bands
+      WHERE summary.overall_avg IS NOT NULL
+        AND summary.overall_avg >= min_value
+        AND summary.overall_avg <= max_value
+      ORDER BY sort_order DESC
+      LIMIT 1
+    ) rb ON true
+    `,
+    values,
+  );
+
+  const row = res.rows[0] ?? {};
+  const avg =
+    row.overall_avg === null || row.overall_avg === undefined
+      ? null
+      : Number(row.overall_avg);
+
+  return {
+    respondents_total: Number(row.respondents_total ?? 0),
+    student: Number(row.student ?? 0),
+    staff: Number(row.staff ?? 0),
+    public: Number(row.public ?? 0),
+    overall_avg: avg !== null && Number.isFinite(avg) ? avg : null,
+    overall_band: row.overall_band ?? null,
+  };
+}
 
 async function ensureDepartmentAccess(
   request: Request,
@@ -239,8 +610,15 @@ export async function getDepartmentYearly({ params, query, request, set }: any) 
     return { message: "Forbidden: cannot access this department" };
   }
 
-  const from = query.from ? Number(query.from) : null;
-  const to = query.to ? Number(query.to) : null;
+  const view = parseView(query.view);
+  const currentBE = getCurrentBEYear();
+  const requestedFrom = parseIntValue(query.from);
+  const requestedTo = parseIntValue(query.to);
+  const from = requestedFrom ?? currentBE - 4;
+  const to = requestedTo ?? currentBE;
+  const selectedYear = parseIntValue(query.year);
+  const selectedMonth = parseMonthValue(query.month);
+  const selectedWeekStart = parseISODate(query.weekStart);
 
   const deptRes = await db.query(
     `SELECT id, name FROM departments WHERE id = $1 AND is_active = true`,
@@ -252,115 +630,198 @@ export async function getDepartmentYearly({ params, query, request, set }: any) 
   }
   const department = deptRes.rows[0];
 
-  const rowsRes = await db.query(
-    `
-    WITH yearly AS (
-      SELECT
-        s.year_be::int AS year_be,
-        ROUND(AVG(a.rating)::numeric, 2) AS avg_rating,
-        COUNT(DISTINCT r.id)::int AS respondents_total,
-        COUNT(DISTINCT r.id) FILTER (WHERE r.respondent_group = 'student')::int AS student,
-        COUNT(DISTINCT r.id) FILTER (WHERE r.respondent_group = 'staff')::int AS staff,
-        COUNT(DISTINCT r.id) FILTER (WHERE r.respondent_group = 'public')::int AS public
-      FROM responses r
-      JOIN surveys s ON s.id = r.survey_id
-      LEFT JOIN answers a ON a.response_id = r.id
-      LEFT JOIN questions q ON q.id = a.question_id
-      WHERE r.department_id = $1
-        AND (q.type = 'rating' OR q.id IS NULL)
-        AND ($2::int IS NULL OR s.year_be >= $2::int)
-        AND ($3::int IS NULL OR s.year_be <= $3::int)
-      GROUP BY s.year_be
-    ),
-    banded AS (
-      SELECT
-        y.*,
-        rb.label_th AS band_label
-      FROM yearly y
-      LEFT JOIN LATERAL (
-        SELECT label_th
-        FROM rating_bands
-        WHERE y.avg_rating IS NOT NULL
-          AND y.avg_rating >= min_value
-          AND y.avg_rating <= max_value
-        ORDER BY sort_order DESC
-        LIMIT 1
-      ) rb ON true
-    )
-    SELECT *
-    FROM banded
-    ORDER BY year_be ASC
-    `,
-    [departmentId, from, to],
-  );
+  let rows: DrilldownPeriodRow[] = [];
+  let title = "สรุปผลการประเมินรายปี";
+  let chartTitle = "กราฟคะแนนเฉลี่ย 5 ปีล่าสุด";
+  let summaryTitle = "สรุปข้อมูลรายปี";
+  let periodLabel = `พ.ศ. ${from} - ${to}`;
+  let periodCountLabel = "จำนวนปีที่มีข้อมูล";
+  let summaryWhere = "AND s.year_be >= $2 AND s.year_be <= $3";
+  let summaryValues: unknown[] = [departmentId, from, to];
 
-  const rows = rowsRes.rows as Array<{
-    year_be: number;
-    avg_rating: number | null;
-    band_label: string | null;
-    respondents_total: number;
-    student: number;
-    staff: number;
-    public: number;
-  }>;
+  if (view === "year") {
+    const aggregateRows = await queryPeriodRows(
+      "s.year_be::int",
+      summaryWhere,
+      summaryValues,
+    );
+    const aggregateMap = mapAggregateByKey(aggregateRows);
 
-  const totals = rows.reduce(
-    (acc, row) => {
-      acc.respondents_total += row.respondents_total || 0;
-      acc.student += row.student || 0;
-      acc.staff += row.staff || 0;
-      acc.public += row.public || 0;
-      return acc;
-    },
-    { respondents_total: 0, student: 0, staff: 0, public: 0 },
-  );
+    rows = Array.from({ length: Math.max(0, to - from + 1) }, (_, index) => {
+      const year = from + index;
+      const metrics = normalizeAggregateRow(aggregateMap.get(String(year)));
 
-  const overallRes = await db.query(
-    `
-    WITH base AS (
-      SELECT ROUND(AVG(a.rating)::numeric, 2) AS overall_avg
-      FROM responses r
-      JOIN surveys s ON s.id = r.survey_id
-      JOIN answers a ON a.response_id = r.id
-      JOIN questions q ON q.id = a.question_id
-      WHERE r.department_id = $1
-        AND q.type = 'rating'
-        AND ($2::int IS NULL OR s.year_be >= $2::int)
-        AND ($3::int IS NULL OR s.year_be <= $3::int)
-    )
-    SELECT
-      b.overall_avg,
-      rb.label_th AS overall_band
-    FROM base b
-    LEFT JOIN LATERAL (
-      SELECT label_th
-      FROM rating_bands
-      WHERE b.overall_avg IS NOT NULL
-        AND b.overall_avg >= min_value
-        AND b.overall_avg <= max_value
-      ORDER BY sort_order DESC
-      LIMIT 1
-    ) rb ON true
-    `,
-    [departmentId, from, to],
-  );
+      return {
+        key: String(year),
+        label: String(year),
+        detail_label: `พ.ศ. ${year}`,
+        year_be: year,
+        month: null,
+        week_start: null,
+        week_end: null,
+        date: null,
+        ...metrics,
+      };
+    });
+  } else if (view === "month") {
+    if (selectedYear === null) {
+      set.status = 400;
+      return { message: "year is required for monthly view" };
+    }
 
-  const overall_avg = overallRes.rows?.[0]?.overall_avg ?? null;
-  const overall_band = overallRes.rows?.[0]?.overall_band ?? null;
-  const minYear = rows.length ? Math.min(...rows.map((row) => row.year_be)) : null;
-  const maxYear = rows.length ? Math.max(...rows.map((row) => row.year_be)) : null;
+    summaryWhere = "AND s.year_be = $2";
+    summaryValues = [departmentId, selectedYear];
+    title = "สรุปผลการประเมินรายเดือน";
+    chartTitle = `กราฟคะแนนเฉลี่ยรายเดือน พ.ศ. ${selectedYear}`;
+    summaryTitle = "สรุปข้อมูลรายเดือน";
+    periodLabel = `พ.ศ. ${selectedYear}`;
+    periodCountLabel = "จำนวนเดือนที่มีข้อมูล";
+
+    const aggregateRows = await queryPeriodRows(
+      "EXTRACT(MONTH FROM r.responded_date)::int",
+      summaryWhere,
+      summaryValues,
+    );
+    const aggregateMap = mapAggregateByKey(aggregateRows);
+
+    rows = THAI_MONTH_SHORT.map((monthLabel, index) => {
+      const month = index + 1;
+      const metrics = normalizeAggregateRow(aggregateMap.get(String(month)));
+
+      return {
+        key: `${selectedYear}-${String(month).padStart(2, "0")}`,
+        label: monthLabel,
+        detail_label: `${monthLabel} ${selectedYear}`,
+        year_be: selectedYear,
+        month,
+        week_start: null,
+        week_end: null,
+        date: null,
+        ...metrics,
+      };
+    });
+  } else if (view === "week") {
+    if (selectedYear === null || selectedMonth === null) {
+      set.status = 400;
+      return { message: "year and month are required for weekly view" };
+    }
+
+    const monthLabel = THAI_MONTH_SHORT[selectedMonth - 1] ?? String(selectedMonth);
+    summaryWhere =
+      "AND s.year_be = $2 AND EXTRACT(MONTH FROM r.responded_date)::int = $3";
+    summaryValues = [departmentId, selectedYear, selectedMonth];
+    title = "สรุปผลการประเมินรายสัปดาห์";
+    chartTitle = `กราฟคะแนนเฉลี่ยรายสัปดาห์ ${monthLabel} ${selectedYear}`;
+    summaryTitle = "สรุปข้อมูลรายสัปดาห์";
+    periodLabel = `${monthLabel} ${selectedYear}`;
+    periodCountLabel = "จำนวนสัปดาห์ที่มีข้อมูล";
+
+    const aggregateRows = await queryPeriodRows(
+      `(date_trunc('month', r.responded_date)::date
+        + ((((EXTRACT(DAY FROM r.responded_date)::int - 1) / 7) * 7) * INTERVAL '1 day')
+      )::date`,
+      summaryWhere,
+      summaryValues,
+    );
+    const aggregateMap = mapAggregateByKey(aggregateRows);
+
+    const calendarYears = await getCalendarYearsForSurveyMonth(
+      departmentId,
+      selectedYear,
+      selectedMonth,
+    );
+    const weeks = calendarYears.flatMap((calendarYear) =>
+      listWeeksForCalendarMonth(calendarYear, selectedMonth),
+    );
+
+    rows = weeks.map((week) => {
+      const metrics = normalizeAggregateRow(aggregateMap.get(week.weekStart));
+
+      return {
+        key: week.weekStart,
+        label: week.label,
+        detail_label: week.detail,
+        year_be: selectedYear,
+        month: selectedMonth,
+        week_start: week.weekStart,
+        week_end: week.weekEnd,
+        date: null,
+        ...metrics,
+      };
+    });
+  } else {
+    if (
+      selectedYear === null ||
+      selectedMonth === null ||
+      selectedWeekStart === null
+    ) {
+      set.status = 400;
+      return { message: "year, month and weekStart are required for daily view" };
+    }
+
+    const weekStart = toISODate(selectedWeekStart);
+    const weekEnd = getClippedWeekEnd(weekStart, selectedMonth);
+    if (!weekEnd) {
+      set.status = 400;
+      return { message: "Invalid weekStart" };
+    }
+    const monthLabel = THAI_MONTH_SHORT[selectedMonth - 1] ?? String(selectedMonth);
+    summaryWhere =
+      "AND s.year_be = $2 AND EXTRACT(MONTH FROM r.responded_date)::int = $3 AND r.responded_date >= $4::date AND r.responded_date <= $5::date";
+    summaryValues = [departmentId, selectedYear, selectedMonth, weekStart, weekEnd];
+    title = "สรุปผลการประเมินรายวัน";
+    chartTitle = `กราฟคะแนนเฉลี่ยรายวัน ${formatWeekDetail(weekStart, weekEnd)}`;
+    summaryTitle = "สรุปข้อมูลรายวัน";
+    periodLabel = `${monthLabel} ${selectedYear} / ${formatWeekDetail(weekStart, weekEnd)}`;
+    periodCountLabel = "จำนวนวันที่มีข้อมูล";
+
+    const aggregateRows = await queryPeriodRows(
+      "r.responded_date::date",
+      summaryWhere,
+      summaryValues,
+    );
+    const aggregateMap = mapAggregateByKey(aggregateRows);
+
+    rows = listDaysForRange(weekStart, weekEnd).map((day) => {
+      const metrics = normalizeAggregateRow(aggregateMap.get(day.date));
+
+      return {
+        key: day.date,
+        label: day.label,
+        detail_label: day.detail,
+        year_be: selectedYear,
+        month: selectedMonth,
+        week_start: weekStart,
+        week_end: weekEnd,
+        date: day.date,
+        ...metrics,
+      };
+    });
+  }
+
+  const summary = await queryPeriodSummary(summaryWhere, summaryValues);
 
   return {
     department,
-    from: from ?? minYear ?? null,
-    to: to ?? maxYear ?? null,
-    years_with_data: rows.length,
-    respondents_total: totals.respondents_total,
-    student: totals.student,
-    staff: totals.staff,
-    public: totals.public,
-    overall_avg,
-    overall_band,
+    view,
+    title,
+    chart_title: chartTitle,
+    summary_title: summaryTitle,
+    period_label: periodLabel,
+    period_count_label: periodCountLabel,
+    from,
+    to,
+    selected_year: selectedYear,
+    selected_month: selectedMonth,
+    selected_week_start:
+      selectedWeekStart === null ? null : toISODate(selectedWeekStart),
+    periods_with_data: rows.filter((row) => row.has_data).length,
+    respondents_total: summary.respondents_total,
+    student: summary.student,
+    staff: summary.staff,
+    public: summary.public,
+    overall_avg: summary.overall_avg,
+    overall_band: summary.overall_band,
     rows,
   };
 }

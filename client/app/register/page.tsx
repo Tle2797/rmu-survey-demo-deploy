@@ -8,6 +8,11 @@ import { ArrowLeft, Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet, apiPost } from "@/lib/api";
 import { getThaiAlertMessage } from "@/lib/alert-message";
+import {
+  containsThaiCharacters,
+  sanitizeUsernameInput,
+  USERNAME_THAI_VALIDATION_MESSAGE,
+} from "@/lib/username";
 
 type Department = {
   id: number;
@@ -49,15 +54,12 @@ function PasswordField({
 }) {
   return (
     <div className="relative">
-      <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-        <Lock size={17} />
-      </span>
       <input
         type={show ? "text" : "password"}
         autoComplete={autoComplete}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className={`${inputClass} pl-10 pr-11`}
+        className={`${inputClass} pr-11`}
       />
       <button
         type="button"
@@ -112,6 +114,10 @@ export default function RegisterPage() {
   }, []);
 
   function validate() {
+    const username = form.username.trim();
+    if (containsThaiCharacters(username)) {
+      throw new Error(USERNAME_THAI_VALIDATION_MESSAGE);
+    }
     if (!form.role) throw new Error("กรุณาเลือกตำแหน่ง");
     if (!form.department_id) throw new Error("กรุณาเลือกหน่วยงาน");
     if (!form.title) throw new Error("กรุณาเลือกคำนำหน้า");
@@ -132,6 +138,7 @@ export default function RegisterPage() {
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    const trimmedUsername = form.username.trim();
 
     try {
       validate();
@@ -143,7 +150,7 @@ export default function RegisterPage() {
         title: form.title,
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
-        username: form.username.trim(),
+        username: trimmedUsername,
         password: form.password,
         confirmPassword: form.confirmPassword,
         email: form.email.trim().toLowerCase(),
@@ -309,30 +316,29 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+            <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+              <User size={16} className="text-slate-400" />
               ชื่อผู้เข้าใช้งานระบบ
             </label>
             <div className="relative">
-              <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-                <User size={17} />
-              </span>
               <input
                 autoComplete="username"
                 value={form.username}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    username: event.target.value,
+                    username: sanitizeUsernameInput(event.target.value),
                   }))
                 }
-                className={`${inputClass} pl-10`}
+                className={inputClass}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                <Lock size={16} className="text-slate-400" />
                 รหัสผ่าน
               </label>
               <PasswordField
@@ -347,7 +353,8 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                <Lock size={16} className="text-slate-400" />
                 ยืนยันรหัสผ่าน
               </label>
               <PasswordField

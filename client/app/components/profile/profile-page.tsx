@@ -12,7 +12,9 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  Lock,
   Shield,
+  User,
   Users,
   UserRound,
 } from "lucide-react";
@@ -725,7 +727,8 @@ export default function ProfilePage() {
               >
                 <div className="space-y-4">
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                      <User className="h-4 w-4 text-slate-400" />
                       ชื่อผู้ใช้
                     </label>
                     <div className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-700">
@@ -780,7 +783,8 @@ export default function ProfilePage() {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                        <Lock className="h-4 w-4 text-slate-400" />
                         รหัสผ่านใหม่
                       </label>
                       <div className="relative">
@@ -805,7 +809,8 @@ export default function ProfilePage() {
                     </div>
 
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                        <Lock className="h-4 w-4 text-slate-400" />
                         ยืนยันรหัสผ่านใหม่
                       </label>
                       <div className="relative">

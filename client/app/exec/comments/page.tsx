@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import { apiGet } from "@/lib/api";
 import {
   Building2,
@@ -12,6 +18,7 @@ import {
   MessageSquareText,
   MessagesSquare,
   Quote,
+  Search,
   Star,
   Users,
 } from "lucide-react";
@@ -86,7 +93,9 @@ function getBand(score: number | null | undefined, bands: RatingBand[]) {
   }
 
   const ordered = [...bands].sort((a, b) => a.sort_order - b.sort_order);
-  const band = ordered.find((item) => score >= item.min_value && score <= item.max_value);
+  const band = ordered.find(
+    (item) => score >= item.min_value && score <= item.max_value,
+  );
 
   if (!band) {
     return {
@@ -153,8 +162,12 @@ function StatCard({
         </div>
         <div>
           <div className="text-sm font-medium text-slate-600">{title}</div>
-          <div className="text-2xl font-black tracking-tight text-slate-900">{value}</div>
-          {sub ? <div className="mt-1 text-xs text-slate-500">{sub}</div> : null}
+          <div className="text-2xl font-black tracking-tight text-slate-900">
+            {value}
+          </div>
+          {sub ? (
+            <div className="mt-1 text-xs text-slate-500">{sub}</div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -181,10 +194,16 @@ function DepartmentMetricCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-700">{title}</div>
-          <div className="mt-2 text-3xl font-black tracking-tight text-slate-900">{value}</div>
-          {sub ? <div className="mt-1 text-xs text-slate-500">{sub}</div> : null}
+          <div className="mt-2 text-3xl font-black tracking-tight text-slate-900">
+            {value}
+          </div>
+          {sub ? (
+            <div className="mt-1 text-xs text-slate-500">{sub}</div>
+          ) : null}
         </div>
-        <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl ${iconClass}`}>
+        <div
+          className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl ${iconClass}`}
+        >
           <Icon className="h-5 w-5" />
         </div>
       </div>
@@ -224,7 +243,10 @@ export default function ExecCommentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
-  const [expandedDepartments, setExpandedDepartments] = useState<Record<number, boolean>>({});
+  const [departmentSearch, setDepartmentSearch] = useState("");
+  const [expandedDepartments, setExpandedDepartments] = useState<
+    Record<number, boolean>
+  >({});
 
   useEffect(() => {
     let alive = true;
@@ -238,7 +260,9 @@ export default function ExecCommentsPage() {
         setData(res);
       } catch (e: unknown) {
         if (!alive) return;
-        setError(e instanceof Error ? e.message : "ไม่สามารถโหลดข้อมูลความคิดเห็นได้");
+        setError(
+          e instanceof Error ? e.message : "ไม่สามารถโหลดข้อมูลความคิดเห็นได้",
+        );
       } finally {
         if (alive) setLoading(false);
       }
@@ -250,12 +274,20 @@ export default function ExecCommentsPage() {
     };
   }, []);
 
-  const departments = data?.departments ?? [];
-  const totalPages = Math.max(1, Math.ceil(departments.length / PAGE_SIZE));
+  const departments = useMemo(() => data?.departments ?? [], [data?.departments]);
+  const filteredDepartments = useMemo(() => {
+    const keyword = departmentSearch.trim().toLowerCase();
+    if (!keyword) return departments;
+
+    return departments.filter((department) =>
+      department.department_name.toLowerCase().includes(keyword),
+    );
+  }, [departmentSearch, departments]);
+  const totalPages = Math.max(1, Math.ceil(filteredDepartments.length / PAGE_SIZE));
   const paginatedDepartments = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
-    return departments.slice(start, start + PAGE_SIZE);
-  }, [departments, page]);
+    return filteredDepartments.slice(start, start + PAGE_SIZE);
+  }, [filteredDepartments, page]);
 
   const totalComments = useMemo(
     () => departments.reduce((sum, item) => sum + item.total_comments, 0),
@@ -276,7 +308,7 @@ export default function ExecCommentsPage() {
   useEffect(() => {
     setPage(1);
     setExpandedDepartments({});
-  }, [departments.length]);
+  }, [departmentSearch, departments.length]);
 
   if (loading && !data) {
     return (
@@ -302,12 +334,17 @@ export default function ExecCommentsPage() {
             </div>
             <div>
               <h1 className="mt-1 text-2xl font-bold">ดูความคิดเห็นหน่วยงาน</h1>
+              <p className="mt-1 text-sm text-sky-100/90">
+                ดูความคิดเห็นทั้งหมดของทุกหน่วยงาน
+              </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-sm text-sky-100">
                   {data?.survey?.title ?? "ยังไม่มีแบบประเมินที่มีข้อมูล"}
                 </div>
                 <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-sm text-sky-100">
-                  {data?.survey?.year_be ? `ปี พ.ศ. ${data.survey.year_be}` : "ไม่มีข้อมูลปี"}
+                  {data?.survey?.year_be
+                    ? `ปี พ.ศ. ${data.survey.year_be}`
+                    : "ไม่มีข้อมูลปี"}
                 </div>
               </div>
             </div>
@@ -349,14 +386,34 @@ export default function ExecCommentsPage() {
           title="ความคิดเห็นหน่วยงาน"
           right={
             <span className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-              ทั้งหมด {formatCount(departments.length)} หน่วยงาน
+              แสดง {formatCount(filteredDepartments.length)} จากทั้งหมด {formatCount(departments.length)} หน่วยงาน
             </span>
           }
         >
           <div className="space-y-5">
+            <div className="rounded-[22px] border border-sky-100 bg-sky-50/50 p-4">
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                ค้นหาตามชื่อหน่วยงาน
+              </label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={departmentSearch}
+                  onChange={(event) => setDepartmentSearch(event.target.value)}
+                  placeholder="พิมพ์ชื่อหน่วยงานที่ต้องการค้นหา"
+                  className="w-full rounded-2xl border border-sky-100 bg-white py-3 pl-10 pr-4 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                />
+              </div>
+            </div>
+
             {paginatedDepartments.map((department, index) => {
-              const band = getBand(department.avg_rating, data?.rating_bands ?? []);
-              const isExpanded = expandedDepartments[department.department_id] === true;
+              const band = getBand(
+                department.avg_rating,
+                data?.rating_bands ?? [],
+              );
+              const isExpanded =
+                expandedDepartments[department.department_id] === true;
               const hasComments = department.comments.length > 0;
 
               return (
@@ -388,7 +445,9 @@ export default function ExecCommentsPage() {
                         {hasComments ? (
                           <button
                             type="button"
-                            onClick={() => toggleComments(department.department_id)}
+                            onClick={() =>
+                              toggleComments(department.department_id)
+                            }
                             className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.18)] transition ${
                               isExpanded
                                 ? "bg-gradient-to-r from-slate-700 to-slate-800 hover:brightness-110"
@@ -460,7 +519,9 @@ export default function ExecCommentsPage() {
                                     <Quote className="h-4 w-4" />
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="text-sm leading-7 text-slate-800">{item.comment}</p>
+                                    <p className="text-sm leading-7 text-slate-800">
+                                      {item.comment}
+                                    </p>
                                     {item.question_text ? (
                                       <div className="mt-2 flex flex-wrap gap-2 text-xs">
                                         <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-sky-700">
@@ -490,7 +551,13 @@ export default function ExecCommentsPage() {
               </div>
             ) : null}
 
-            {departments.length > 0 ? (
+            {departments.length > 0 && filteredDepartments.length === 0 ? (
+              <div className="rounded-[22px] border border-dashed border-sky-200 bg-sky-50/40 p-8 text-center text-slate-500">
+                ไม่พบหน่วยงานที่ตรงกับคำค้นหา
+              </div>
+            ) : null}
+
+            {filteredDepartments.length > 0 ? (
               <div className="flex justify-end border-t border-slate-100 pt-4">
                 <div className="flex items-center gap-2">
                   <button
@@ -507,7 +574,9 @@ export default function ExecCommentsPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                    onClick={() =>
+                      setPage((prev) => Math.min(totalPages, prev + 1))
+                    }
                     disabled={page >= totalPages}
                     className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >

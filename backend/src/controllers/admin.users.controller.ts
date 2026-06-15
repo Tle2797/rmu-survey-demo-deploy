@@ -4,8 +4,12 @@ import {
   ProfileImageUploadError,
   saveProfileImage,
 } from "../services/profile-image";
-import { sendUserApprovalEmail } from "../services/mail";
+import { sendUserApprovalEmail, sendUserRejectionEmail } from "../services/mail";
 import { authenticateRequest } from "../utils/auth";
+import {
+  containsThaiCharacters,
+  USERNAME_THAI_VALIDATION_MESSAGE,
+} from "../utils/username";
 
 export async function listUsers() {
   const res = await db.query(
@@ -51,6 +55,11 @@ export async function createUser({ body, set }: any) {
   const first_name = body.first_name ? body.first_name.trim() : null;
   const last_name = body.last_name ? body.last_name.trim() : null;
   const email = body.email ? String(body.email).trim().toLowerCase() : null;
+
+  if (containsThaiCharacters(username)) {
+    set.status = 400;
+    return { message: USERNAME_THAI_VALIDATION_MESSAGE };
+  }
 
   if (!username) {
     set.status = 400;
@@ -166,6 +175,11 @@ export async function updateUser({ params, body, set }: any) {
     body.department_id === undefined
       ? current.department_id
       : body.department_id;
+
+  if (containsThaiCharacters(username)) {
+    set.status = 400;
+    return { message: USERNAME_THAI_VALIDATION_MESSAGE };
+  }
 
   if ((role === "dept_head" || role === "staff") && !department_id) {
     set.status = 400;
@@ -458,7 +472,33 @@ export async function rejectUserRegistration({ params, body, request, set }: any
     [id, currentUser.id, reason],
   );
 
-  return { item: up.rows[0] };
+  const rejectedUser = up.rows[0];
+  let emailSent = false;
+  let emailError: string | null = null;
+
+  if (rejectedUser.email) {
+    try {
+      await sendUserRejectionEmail({
+        email: rejectedUser.email,
+        fullName: formatUserFullName(rejectedUser),
+        reason,
+      });
+      emailSent = true;
+    } catch (error) {
+      emailError = error instanceof Error ? error.message : "Unable to send rejection email";
+      console.error("Failed to send user rejection email", {
+        user_id: rejectedUser.id,
+        email: rejectedUser.email,
+        error,
+      });
+    }
+  }
+
+  return {
+    item: rejectedUser,
+    email_sent: emailSent,
+    email_error: emailError,
+  };
 }
 
 export async function deleteUser({ params, set }: any) {
@@ -508,6 +548,11 @@ export async function updateAdminProfile({ body, set }: any) {
   const title = b?.title !== undefined ? (b.title ? b.title.trim() : null) : current.title;
   const first_name = b?.first_name !== undefined ? (b.first_name ? b.first_name.trim() : null) : current.first_name;
   const last_name = b?.last_name !== undefined ? (b.last_name ? b.last_name.trim() : null) : current.last_name;
+
+  if (containsThaiCharacters(username)) {
+    set.status = 400;
+    return { message: USERNAME_THAI_VALIDATION_MESSAGE };
+  }
 
   if (!username) {
     set.status = 400;

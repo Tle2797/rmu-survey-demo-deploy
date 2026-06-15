@@ -2,8 +2,11 @@ import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import path from "path";
 import fs from "fs";
+import "./config/env";
+import { db } from "./config/db";
 import { authenticateRequest } from "./utils/jwt";
 import { hasAnyRole } from "./utils/authorization";
+import { ensureQRCodeAsset } from "./services/qrcode";
 
 import { healthRoute } from "./routes/health.route";
 import { departmentsRoute } from "./routes/departments.route";
@@ -126,7 +129,7 @@ export const app = new Elysia()
   .use(execDashboardRoute)
   .use(execCommentsRoute)
   .use(dashboardReportsRoute)
-  .get("/qrcodes/:filename", ({ params, set }) => {
+  .get("/qrcodes/:filename", async ({ params, set }) => {
     const filename = params.filename;
     if (filename.includes("..") || filename.includes("/")) {
       set.status = 400;
@@ -135,8 +138,23 @@ export const app = new Elysia()
 
     const filePath = path.resolve(process.cwd(), "public", "qrcodes", filename);
     if (!fs.existsSync(filePath)) {
-      set.status = 404;
-      return "Not found";
+      const qrRes = await db.query(
+        `SELECT image_path, link_target
+         FROM qrcodes
+         WHERE image_path = $1
+         LIMIT 1`,
+        [`/qrcodes/${filename}`],
+      );
+
+      const qrcode = qrRes.rows[0];
+      if (qrcode) {
+        await ensureQRCodeAsset(qrcode.image_path, qrcode.link_target);
+      }
+
+      if (!fs.existsSync(filePath)) {
+        set.status = 404;
+        return "Not found";
+      }
     }
 
     const buffer = fs.readFileSync(filePath);

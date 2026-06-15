@@ -162,3 +162,46 @@ export async function sendUserApprovalEmail({
     `,
   });
 }
+
+export async function sendUserRejectionEmail({
+  email,
+  fullName,
+  reason,
+}: {
+  email: string;
+  fullName: string;
+  reason?: string | null;
+}) {
+  const rejectionReason = reason?.trim() || "ไม่ได้ระบุเหตุผลเพิ่มเติม";
+  const safeFullName = escapeHtml(fullName || "ผู้ใช้งาน");
+  const safeReason = escapeHtml(rejectionReason);
+  const rejectionMessage =
+    "บัญชีผู้ใช้งานของคุณไม่ได้รับการอนุมัติให้เข้าใช้งานระบบประเมินความพึงพอใจ " +
+    "การใช้บริการหน่วยงาน ภายในมหาวิทยาลัยราชภัฏมหาสารคาม";
+  const safeRejectionMessage = escapeHtml(rejectionMessage);
+
+  await sendMailMessage({
+    to: email,
+    subject: "บัญชีผู้ใช้งานไม่ได้รับการอนุมัติ",
+    text:
+      `เรียน ${fullName || "ผู้ใช้งาน"}\n\n` +
+      `${rejectionMessage}\n\n` +
+      `เหตุผลที่ไม่อนุมัติ: ${rejectionReason}\n\n` +
+      "หากต้องการสอบถามข้อมูลเพิ่มเติม กรุณาติดต่อผู้ดูแลระบบ\n\n" +
+      "ขอบคุณครับ/ค่ะ",
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #0f172a;">
+        <h2 style="margin: 0 0 12px;">บัญชีผู้ใช้งานไม่ได้รับการอนุมัติ</h2>
+        <p>เรียน ${safeFullName}</p>
+        <p>${safeRejectionMessage}</p>
+        <div style="margin: 16px 0; border-left: 4px solid #dc2626; background: #fef2f2; padding: 12px 16px;">
+          <strong>เหตุผลที่ไม่อนุมัติ</strong>
+          <p style="margin: 8px 0 0;">${safeReason}</p>
+        </div>
+        <p style="font-size: 13px; color: #475569;">
+          หากต้องการสอบถามข้อมูลเพิ่มเติม กรุณาติดต่อผู้ดูแลระบบ
+        </p>
+      </div>
+    `,
+  });
+}

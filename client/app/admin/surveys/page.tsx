@@ -367,13 +367,8 @@ export default function AdminSurveysPage() {
     }
 
     list.sort((a, b) => {
-      const aTime = a.created_at ? Date.parse(a.created_at) : 0;
-      const bTime = b.created_at ? Date.parse(b.created_at) : 0;
-      const safeATime = Number.isFinite(aTime) ? aTime : 0;
-      const safeBTime = Number.isFinite(bTime) ? bTime : 0;
-
-      if (safeATime !== safeBTime) {
-        return safeBTime - safeATime;
+      if (a.year_be !== b.year_be) {
+        return b.year_be - a.year_be;
       }
 
       return b.id - a.id;
@@ -435,11 +430,18 @@ export default function AdminSurveysPage() {
         throw new Error("กรุณากรอกปีการศึกษาให้ถูกต้อง (พ.ศ.)");
       }
 
-      const payload = {
+      const payloadDescription = description.trim();
+      const payload: {
+        title: string;
+        description?: string;
+        year_be: number;
+      } = {
         title: payloadTitle,
-        description: description.trim() || null,
         year_be: yearBe,
       };
+      if (payloadDescription) {
+        payload.description = payloadDescription;
+      }
 
       setBusy(true);
       const isCreate = mode === "create";

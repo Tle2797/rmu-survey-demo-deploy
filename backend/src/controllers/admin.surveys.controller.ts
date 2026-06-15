@@ -5,6 +5,53 @@ function parseForce(value: unknown) {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
+function normalizeDescription(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function parseYearBe(value: unknown) {
+  const year = Number(value);
+  if (!Number.isInteger(year) || year < 2500) return null;
+  return year;
+}
+
+function isDuplicateSurveyYearError(error: any) {
+  return (
+    error?.code === "23505" &&
+    (error?.constraint === "uq_surveys_year" ||
+      String(error?.detail ?? "").includes("year_be"))
+  );
+}
+
+async function findDuplicateSurvey(
+  title: string,
+  yearBe: number,
+  excludeId?: number,
+) {
+  const values: Array<string | number> = [title, yearBe];
+  let excludeSql = "";
+
+  if (typeof excludeId === "number" && Number.isFinite(excludeId) && excludeId > 0) {
+    values.push(excludeId);
+    excludeSql = `AND id != $3`;
+  }
+
+  const res = await db.query(
+    `
+    SELECT id, title, year_be
+    FROM surveys
+    WHERE (LOWER(TRIM(title)) = LOWER(TRIM($1)) OR year_be = $2)
+      ${excludeSql}
+    LIMIT 1
+    `,
+    values,
+  );
+
+  return res.rows[0] ?? null;
+}
+
 async function getSurveyDependencies(
   client: Pick<typeof db, "query">,
   surveyId: number,
@@ -36,7 +83,7 @@ export async function listSurveys() {
   const res = await db.query(`
     SELECT id, year_be, title, description, is_active, created_at, updated_at
     FROM surveys
-    ORDER BY id DESC
+    ORDER BY year_be DESC, id DESC
   `);
 
   return { total: res.rowCount ?? 0, items: res.rows };
@@ -51,14 +98,39 @@ export async function createSurvey({ body, set }: any) {
     return { message: "Title is required" };
   }
 
-  const ins = await db.query(
-    `
-    INSERT INTO surveys(title, description, year_be, is_active)
-    VALUES ($1, $2, $3, false)
-    RETURNING id, year_be, title, description, is_active, created_at, updated_at
-    `,
-    [trimmedTitle, description || null, year_be],
-  );
+  const parsedYearBe = parseYearBe(year_be);
+  if (parsedYearBe === null) {
+    set.status = 400;
+    return { message: "Invalid year_be" };
+  }
+
+  const duplicate = await findDuplicateSurvey(trimmedTitle, parsedYearBe);
+  if (duplicate) {
+    set.status = 409;
+    if (Number(duplicate.year_be) === parsedYearBe) {
+      return { message: "ปีการศึกษานี้มีแบบสอบถามอยู่แล้ว" };
+    }
+    return { message: "ชื่อแบบสอบถามนี้มีอยู่แล้ว" };
+  }
+
+  let ins;
+  try {
+    ins = await db.query(
+      `
+      INSERT INTO surveys(title, description, year_be, is_active)
+      VALUES ($1, $2, $3, false)
+      RETURNING id, year_be, title, description, is_active, created_at, updated_at
+      `,
+      [trimmedTitle, normalizeDescription(description), parsedYearBe],
+    );
+  } catch (error: any) {
+    if (isDuplicateSurveyYearError(error)) {
+      set.status = 409;
+      return { message: "ปีการศึกษานี้มีแบบสอบถามอยู่แล้ว" };
+    }
+
+    throw error;
+  }
 
   set.status = 201;
   return ins.rows[0];
@@ -79,15 +151,40 @@ export async function updateSurvey({ params, body, set }: any) {
     return { message: "Title is required" };
   }
 
-  const upd = await db.query(
-    `
-    UPDATE surveys
-    SET title = $2, description = $3, year_be = $4, updated_at = NOW()
-    WHERE id = $1
-    RETURNING id, year_be, title, description, is_active, created_at, updated_at
-    `,
-    [id, trimmedTitle, description || null, year_be],
-  );
+  const parsedYearBe = parseYearBe(year_be);
+  if (parsedYearBe === null) {
+    set.status = 400;
+    return { message: "Invalid year_be" };
+  }
+
+  const duplicate = await findDuplicateSurvey(trimmedTitle, parsedYearBe, id);
+  if (duplicate) {
+    set.status = 409;
+    if (Number(duplicate.year_be) === parsedYearBe) {
+      return { message: "ปีการศึกษานี้มีแบบสอบถามอยู่แล้ว" };
+    }
+    return { message: "ชื่อแบบสอบถามนี้มีอยู่แล้ว" };
+  }
+
+  let upd;
+  try {
+    upd = await db.query(
+      `
+      UPDATE surveys
+      SET title = $2, description = $3, year_be = $4, updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, year_be, title, description, is_active, created_at, updated_at
+      `,
+      [id, trimmedTitle, normalizeDescription(description), parsedYearBe],
+    );
+  } catch (error: any) {
+    if (isDuplicateSurveyYearError(error)) {
+      set.status = 409;
+      return { message: "ปีการศึกษานี้มีแบบสอบถามอยู่แล้ว" };
+    }
+
+    throw error;
+  }
 
   if ((upd.rowCount ?? 0) === 0) {
     set.status = 404;

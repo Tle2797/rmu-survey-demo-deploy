@@ -305,17 +305,22 @@ export default function UserApprovalsPage() {
 
     try {
       setBusyId(row.id);
-      await apiPut(
+      const res = await apiPut<ApprovalActionResponse>(
         `/api/admin/user-approvals/${row.id}/reject`,
         reason ? { reason } : {},
       );
       await loadData();
       await Swal.fire({
-        icon: "success",
+        icon: res.email_sent === false ? "warning" : "success",
         title: "บันทึกผลเรียบร้อย",
-        text: "ผู้ใช้ไม่ได้รับการอนุมัติให้เข้าใช้งานระบบ",
-        timer: 1400,
-        showConfirmButton: false,
+        text:
+          res.email_sent === false
+            ? "บันทึกผลไม่อนุมัติแล้ว แต่ระบบส่งอีเมลแจ้งผู้ใช้ไม่สำเร็จ"
+            : "ผู้ใช้ไม่ได้รับการอนุมัติ และระบบส่งอีเมลแจ้งเหตุผลเรียบร้อยแล้ว",
+        timer: res.email_sent === false ? undefined : 1600,
+        showConfirmButton: res.email_sent === false,
+        confirmButtonText: "ตกลง",
+        confirmButtonColor: "#0369a1",
       });
     } catch (error: unknown) {
       await Swal.fire({

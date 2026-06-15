@@ -1,36 +1,30 @@
-# Use official Bun image
-FROM oven/bun:1 AS base
+FROM oven/bun:1-alpine AS deps
 WORKDIR /app
-RUN apt-get update -y \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl \
-  && rm -rf /var/lib/apt/lists/*
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
-# Install dependencies
-FROM base AS install
-RUN mkdir -p /temp/dev
-COPY package.json bun.lock /temp/dev/
-RUN cd /temp/dev && bun install
-
-# Install production dependencies only
-RUN mkdir -p /temp/prod
-COPY package.json bun.lock /temp/prod/
-RUN cd /temp/prod && bun install --production
-
-# Build the application
-FROM base AS build
-COPY --from=install /temp/dev/node_modules node_modules
+FROM oven/bun:1-alpine AS build
+WORKDIR /app
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN bun --bun run build
 
-# Final production image
-FROM base AS release
+FROM node:22-alpine AS release
+WORKDIR /app
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
 ENV PORT=3481
-COPY --from=install /temp/prod/node_modules node_modules
-COPY --from=build /app/.next ./.next
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+RUN apk add --no-cache curl
 COPY --from=build /app/public ./public
-COPY package.json .
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
 
-EXPOSE  3481
+EXPOSE 3481
 
-CMD ["bun", "--bun", "run", "start"]
+CMD ["node", "server.js"]

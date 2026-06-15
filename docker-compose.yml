@@ -4,6 +4,8 @@ services:
     build: 
       context: ./client
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://iqa-api.rmu.ac.th
     container_name: iqa_frontend_service
     ports:
       - "3481:3481"
@@ -30,6 +32,7 @@ services:
     env_file:
       - ./backend/.env.production
     volumes:
+      - qrcodes_data:/app/public/qrcodes
       - uploads_data:/app/public/uploads  # ใช้ named volume แทน bind mount
     # depends_on:
     #   - database  # ถ้ามี database service
@@ -60,6 +63,7 @@ services:
   #     - app-network
 
 volumes:
+  qrcodes_data:
   uploads_data:
   # postgres_data:
 

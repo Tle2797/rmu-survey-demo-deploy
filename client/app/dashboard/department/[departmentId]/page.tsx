@@ -87,13 +87,6 @@ type IconType = ComponentType<{ className?: string }>;
 
 const COMMENTS_PAGE_SIZE = 10;
 
-type DepartmentDashboardPageProps = {
-  title?: string;
-  icon?: IconType;
-  commentsBasePath?: string;
-  errorTitle?: string;
-};
-
 const groupLabel: Record<"student" | "staff" | "public", string> = {
   student: "นักศึกษา",
   staff: "บุคลากร",
@@ -317,12 +310,11 @@ function ErrorState({
   );
 }
 
-export default function DepartmentDashboardPage({
-  title = "แดชบอร์ดหน่วยงาน",
-  icon: HeaderIcon = BarChart3,
-  commentsBasePath = "/dashboard/department",
-  errorTitle = title,
-}: DepartmentDashboardPageProps = {}) {
+export default function DepartmentDashboardPage() {
+  const title = "แดชบอร์ดหน่วยงาน";
+  const HeaderIcon = BarChart3;
+  const commentsBasePath = "/dashboard/department";
+  const errorTitle = title;
   const params = useParams<{ departmentId: string }>();
   const searchParams = useSearchParams();
 

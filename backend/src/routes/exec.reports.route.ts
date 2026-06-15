@@ -8,6 +8,11 @@ export const execReportsRoute = new Elysia({ prefix: "/api/exec" }).get(
     query: t.Object({
       surveyId: t.Optional(t.String()),
       year: t.Optional(t.String()),
+      view: t.Optional(t.String()),
+      month: t.Optional(t.String()),
+      weekStart: t.Optional(t.String()),
+      date: t.Optional(t.String()),
+      respondentGroup: t.Optional(t.String()),
     }),
   },
 );

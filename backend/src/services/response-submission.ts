@@ -264,9 +264,13 @@ export async function submitSurveyResponse(payload: Record<string, unknown>) {
       const comment =
         qType === "text"
           ? item.comment === undefined || item.comment === null
-            ? null
+            ? ""
             : String(item.comment).trim()
           : null;
+
+      if (qType === "text" && !comment) {
+        continue;
+      }
 
       await client.query(
         `

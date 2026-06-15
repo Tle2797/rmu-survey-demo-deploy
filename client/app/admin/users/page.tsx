@@ -2,9 +2,14 @@
 "use client";
 
 import React, { useEffect, useMemo, useState, type ComponentType, type SVGProps } from "react";
-import { Eye, EyeOff, Users, UserCheck, UserX, X } from "lucide-react";
+import { Eye, EyeOff, Lock, User, Users, UserCheck, UserX, X } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import {
+  containsThaiCharacters,
+  sanitizeUsernameInput,
+  USERNAME_THAI_VALIDATION_MESSAGE,
+} from "@/lib/username";
 
 type RoleCode = "admin" | "exec" | "dept_head" | "staff";
 type RoleValue = "" | RoleCode;
@@ -225,6 +230,7 @@ function getErrorMessage(error: unknown, fallback: string) {
   if (!message) return fallback;
 
   const translations: Record<string, string> = {
+    "username must not contain Thai characters": "ชื่อผู้เข้าใช้งานระบบห้ามกรอกภาษาไทย",
     "email already exists": "อีเมลนี้มีอยู่ในระบบแล้ว",
     "username already exists": "ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว",
     "username is required": "กรุณากรอกชื่อผู้ใช้",
@@ -503,6 +509,9 @@ export default function AdminUsersPage() {
   const validate = () => {
     if (editing === null) {
       const username = form.username.trim();
+      if (containsThaiCharacters(username)) {
+        throw new Error(USERNAME_THAI_VALIDATION_MESSAGE);
+      }
       if (!username) throw new Error("กรุณากรอกชื่อผู้ใช้");
     }
 
@@ -1081,7 +1090,8 @@ export default function AdminUsersPage() {
 
                   {/* Username */}
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                      <User className="h-4 w-4 text-slate-400" />
                       ชื่อผู้เข้าใช้งานระบบ
                     </label>
                     {editing ? (
@@ -1095,10 +1105,18 @@ export default function AdminUsersPage() {
                       <input
                         value={form.username}
                         onChange={(e) =>
-                          setForm((p) => ({ ...p, username: e.target.value }))
+                          setForm((p) => ({
+                            ...p,
+                            username: sanitizeUsernameInput(e.target.value),
+                          }))
                         }
                         className={inputClass}
                       />
+                    )}
+                    {!editing && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        ชื่อผู้เข้าใช้งานระบบห้ามกรอกภาษาไทย
+                      </p>
                     )}
                   </div>
 
@@ -1140,7 +1158,8 @@ export default function AdminUsersPage() {
                       {changePassword && (
                         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <div>
-                            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                            <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                              <Lock className="h-4 w-4 text-slate-400" />
                               รหัสผ่านใหม่
                             </label>
                             <PasswordField
@@ -1155,7 +1174,8 @@ export default function AdminUsersPage() {
                             />
                           </div>
                           <div>
-                            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                            <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                              <Lock className="h-4 w-4 text-slate-400" />
                               ยืนยันรหัสผ่านใหม่
                             </label>
                             <PasswordField
@@ -1181,7 +1201,8 @@ export default function AdminUsersPage() {
                     <div className="space-y-3">
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                        <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                          <Lock className="h-4 w-4 text-slate-400" />
                           รหัสผ่าน
                         </label>
                         <PasswordField
@@ -1196,7 +1217,8 @@ export default function AdminUsersPage() {
                         />
                       </div>
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                        <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                          <Lock className="h-4 w-4 text-slate-400" />
                           ยืนยันรหัสผ่าน
                         </label>
                         <PasswordField

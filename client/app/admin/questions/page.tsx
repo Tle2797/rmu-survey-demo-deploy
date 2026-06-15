@@ -96,7 +96,7 @@ const QUESTION_TYPE_OPTIONS: Array<{
 }> = [
   {
     value: "rating",
-    label: "ให้คะแนน 1-5",
+    label: "ให้คะแนน 1-5 ดาว",
     description: "",
   },
   {
@@ -119,6 +119,11 @@ function getQuestionTypeTone(type: QuestionType) {
 function getDefaultDisplayOrder(items: QuestionRow[]) {
   if (items.length === 0) return 1;
   return Math.max(...items.map((item) => item.display_order)) + 1;
+}
+
+function normalizeDisplayOrderInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return digits.replace(/^0+/, "");
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -310,7 +315,7 @@ export default function AdminCentralQuestionsPage() {
   const [editing, setEditing] = useState<QuestionRow | null>(null);
   const [text, setText] = useState("");
   const [qType, setQType] = useState<QuestionType>("rating");
-  const [displayOrder, setDisplayOrder] = useState<number>(1);
+  const [displayOrder, setDisplayOrder] = useState("1");
 
   const load = async () => {
     const res = await apiGet<CentralQuestionsRes>("/api/admin/questions/central");
@@ -392,13 +397,16 @@ export default function AdminCentralQuestionsPage() {
     const start = (safeCurrentPage - 1) * PAGE_SIZE;
     return filteredItems.slice(start, start + PAGE_SIZE);
   }, [filteredItems, safeCurrentPage]);
+  const isQuestionTypeLocked =
+    mode === "edit" &&
+    Boolean(editing?.has_answers || (editing?.answer_count ?? 0) > 0);
 
   const openCreate = () => {
     setMode("create");
     setEditing(null);
     setText("");
     setQType("rating");
-    setDisplayOrder(getDefaultDisplayOrder(items));
+    setDisplayOrder(String(getDefaultDisplayOrder(items)));
     setOpen(true);
   };
 
@@ -407,7 +415,7 @@ export default function AdminCentralQuestionsPage() {
     setEditing(row);
     setText(row.text);
     setQType(row.type);
-    setDisplayOrder(row.display_order);
+    setDisplayOrder(String(row.display_order));
     setOpen(true);
   };
 
@@ -417,7 +425,7 @@ export default function AdminCentralQuestionsPage() {
     setMode("create");
     setText("");
     setQType("rating");
-    setDisplayOrder(1);
+    setDisplayOrder("1");
   };
 
   const save = async () => {
@@ -429,15 +437,20 @@ export default function AdminCentralQuestionsPage() {
       if (!currentSurveyId) {
         throw new Error("ไม่พบแบบสอบถามที่กำลังเปิดใช้งาน");
       }
-      if (!Number.isFinite(displayOrder) || displayOrder < 1) {
+      const displayOrderValue = Number(displayOrder);
+      if (
+        !displayOrder.trim() ||
+        !Number.isInteger(displayOrderValue) ||
+        displayOrderValue < 1
+      ) {
         throw new Error("กรุณากรอกลำดับการแสดงผลให้มากกว่า 0");
       }
 
       const payload = {
         survey_id: currentSurveyId,
         text: payloadText,
-        type: qType,
-        display_order: displayOrder,
+        type: isQuestionTypeLocked && editing ? editing.type : qType,
+        display_order: displayOrderValue,
       };
 
       setBusy(true);
@@ -786,8 +799,7 @@ export default function AdminCentralQuestionsPage() {
                         <div className="font-medium">{row.text}</div>
                         {row.has_answers && (
                           <div className="mt-1 text-xs text-amber-700">
-                            มีข้อมูลการประเมินแล้ว {row.answer_count.toLocaleString("th-TH")} รายการ จาก{" "}
-                            {row.response_count.toLocaleString("th-TH")} แบบประเมิน
+                            มีข้อมูลการประเมินแล้ว {row.answer_count.toLocaleString("th-TH")} รายการ จากแบบประเมิน
                           </div>
                         )}
                       </td>
@@ -912,6 +924,7 @@ export default function AdminCentralQuestionsPage() {
                         value={qType}
                         onChange={(e) => setQType(e.target.value as QuestionType)}
                         className={selectClass}
+                        disabled={busy || isQuestionTypeLocked}
                       >
                         {QUESTION_TYPE_OPTIONS.map((item) => (
                           <option key={item.value} value={item.value}>
@@ -920,7 +933,14 @@ export default function AdminCentralQuestionsPage() {
                         ))}
                       </select>
                       <p className="mt-1.5 text-xs leading-5 text-slate-500">
-                        {QUESTION_TYPE_OPTIONS.find((item) => item.value === qType)?.description}
+                        {isQuestionTypeLocked
+                          ? `คำถามนี้มีผู้ประเมินตอบแล้ว ${(
+                              editing?.answer_count ?? 0
+                            ).toLocaleString(
+                              "th-TH",
+                            )} รายการ จึงไม่สามารถเปลี่ยนรูปแบบคำตอบได้`
+                          : QUESTION_TYPE_OPTIONS.find((item) => item.value === qType)
+                              ?.description}
                       </p>
                     </div>
 
@@ -929,13 +949,14 @@ export default function AdminCentralQuestionsPage() {
                         ลำดับการแสดงผล <span className="text-red-500">*</span>
                       </label>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={displayOrder}
                         onChange={(e) =>
-                          setDisplayOrder(parseInt(e.target.value, 10) || 0)
+                          setDisplayOrder(normalizeDisplayOrderInput(e.target.value))
                         }
                         className={inputClass}
-                        placeholder="1"
                       />
                     </div>
                   </div>

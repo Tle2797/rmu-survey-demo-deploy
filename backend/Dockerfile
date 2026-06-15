@@ -1,28 +1,20 @@
-# Use official Bun image
-FROM oven/bun:1 AS base
+FROM oven/bun:1-alpine AS install
 WORKDIR /app
-RUN apt-get update -y \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl \
-  && rm -rf /var/lib/apt/lists/*
-
-# Install production dependencies
-FROM base AS install
+RUN apk add --no-cache curl
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
-# Final production image
-FROM base AS release
+FROM oven/bun:1-alpine AS release
+WORKDIR /app
 ENV NODE_ENV=production
-
+RUN apk add --no-cache curl
 COPY --from=install /app/node_modules ./node_modules
 COPY package.json bun.lock tsconfig.json ./
 COPY src ./src
 COPY public ./public
-
-# Create upload directory for profile images
-RUN mkdir -p /app/public/uploads/profiles && chmod -R 777 /app/public/uploads
+RUN mkdir -p /app/public/uploads/profiles /app/public/qrcodes \
+  && chmod -R 777 /app/public/uploads /app/public/qrcodes
 
 EXPOSE 8481
 
-# Run the Elysia app
 CMD ["bun", "run", "start"]
