@@ -10,17 +10,12 @@
  */
 
 import React, { useEffect, useState } from "react";
-import Sidebar from "../components/sidebar/sidebar";
+import Sidebar, { type SidebarUser } from "../components/sidebar/sidebar";
 import { apiGet } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 type MeRes = {
-  user: {
-    id: number;
-    username: string;
-    role: "admin" | "exec" | "dept_head" | "staff";
-    departmentId: number | null;
-  };
+  user: SidebarUser;
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -79,7 +74,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     // ✅ คุม scroll เฉพาะ main (กันปัญหาเลื่อนหน้าไม่ได้)
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <Sidebar role={me.role} departmentId={me.departmentId ?? undefined} />
+      <Sidebar
+        role={me.role}
+        departmentId={me.departmentId ?? undefined}
+        user={me}
+      />
       <main className="flex-1 h-full overflow-y-auto">{children}</main>
     </div>
   );

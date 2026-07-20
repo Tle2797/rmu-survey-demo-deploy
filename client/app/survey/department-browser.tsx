@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Building2, Search } from "lucide-react";
@@ -8,17 +8,17 @@ import { Building2, Search } from "lucide-react";
 type Department = {
   id: number;
   name: string;
+  department_group_id: number;
+  department_group_name: string;
+  department_group_display_order: number;
 };
 
-const MOBILE_PAGE_SIZE = 10;
-const TABLET_PAGE_SIZE = 10;
-const DESKTOP_PAGE_SIZE = 10;
-
-function getDepartmentPageSize(viewportWidth: number) {
-  if (viewportWidth >= 1024) return DESKTOP_PAGE_SIZE;
-  if (viewportWidth >= 640) return TABLET_PAGE_SIZE;
-  return MOBILE_PAGE_SIZE;
-}
+type DepartmentGroup = {
+  id: number;
+  name: string;
+  displayOrder: number;
+  departments: Department[];
+};
 
 export default function DepartmentBrowser({
   departments,
@@ -32,34 +32,45 @@ export default function DepartmentBrowser({
   initialQuery?: string;
 }) {
   const [query, setQuery] = useState(initialQuery);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(TABLET_PAGE_SIZE);
-
-  useEffect(() => {
-    const syncItemsPerPage = () =>
-      setItemsPerPage(getDepartmentPageSize(window.innerWidth));
-
-    syncItemsPerPage();
-    window.addEventListener("resize", syncItemsPerPage);
-
-    return () => window.removeEventListener("resize", syncItemsPerPage);
-  }, []);
 
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleDepartments = normalizedQuery
-    ? departments.filter((dept) =>
-        dept.name.toLowerCase().includes(normalizedQuery),
-      )
-    : departments;
-  const totalPages =
-    visibleDepartments.length === 0
-      ? 0
-      : Math.ceil(visibleDepartments.length / itemsPerPage);
-  const safeCurrentPage = totalPages === 0 ? 1 : Math.min(currentPage, totalPages);
-  const startIndex = (safeCurrentPage - 1) * itemsPerPage;
-  const paginatedDepartments = visibleDepartments.slice(
-    startIndex,
-    startIndex + itemsPerPage,
+  const departmentGroups = departments.reduce<DepartmentGroup[]>((groups, dept) => {
+    const existingGroup = groups.find(
+      (group) => group.id === dept.department_group_id,
+    );
+
+    if (existingGroup) {
+      existingGroup.departments.push(dept);
+      return groups;
+    }
+
+    groups.push({
+      id: dept.department_group_id,
+      name: dept.department_group_name,
+      displayOrder: dept.department_group_display_order,
+      departments: [dept],
+    });
+    return groups;
+  }, []);
+  const visibleGroups = departmentGroups
+    .sort((left, right) => left.displayOrder - right.displayOrder || left.id - right.id)
+    .map((group) => {
+      if (!normalizedQuery) return group;
+
+      const groupMatches = group.name.toLowerCase().includes(normalizedQuery);
+      return {
+        ...group,
+        departments: groupMatches
+          ? group.departments
+          : group.departments.filter((dept) =>
+              dept.name.toLowerCase().includes(normalizedQuery),
+            ),
+      };
+    })
+    .filter((group) => group.departments.length > 0);
+  const visibleDepartmentCount = visibleGroups.reduce(
+    (sum, group) => sum + group.departments.length,
+    0,
   );
 
   return (
@@ -194,10 +205,7 @@ export default function DepartmentBrowser({
                         id="department-search"
                         type="search"
                         value={query}
-                        onChange={(event) => {
-                          setQuery(event.target.value);
-                          setCurrentPage(1);
-                        }}
+                        onChange={(event) => setQuery(event.target.value)}
                         className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-left text-sm text-slate-800 placeholder:text-left placeholder:text-slate-400 shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50 sm:text-base"
                         autoComplete="off"
                       />
@@ -206,13 +214,15 @@ export default function DepartmentBrowser({
                   <div className="flex justify-end">
                     <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-700 shadow-sm sm:text-sm">
                       <Building2 className="h-4 w-4" aria-hidden="true" />
-                      ทั้งหมด {total.toLocaleString("th-TH")} หน่วยงาน
+                      {normalizedQuery
+                        ? `พบ ${visibleDepartmentCount.toLocaleString("th-TH")} จากทั้งหมด ${total.toLocaleString("th-TH")} หน่วยงาน`
+                        : `ทั้งหมด ${total.toLocaleString("th-TH")} หน่วยงาน`}
                     </div>
                   </div>
                 </div>
               </div>
               <div className="mt-5">
-                {visibleDepartments.length === 0 && query ? (
+                {visibleDepartmentCount === 0 && query ? (
                   <div className="rounded-[24px] border border-dashed border-sky-200 bg-sky-50/50 px-5 py-10 text-center sm:px-8 sm:py-12">
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-sky-600 shadow-sm ring-1 ring-sky-100">
                       <Search className="h-7 w-7" aria-hidden="true" />
@@ -224,7 +234,7 @@ export default function DepartmentBrowser({
                       ลองพิมพ์คำค้นใหม่ให้สั้นลง หรือเคลียร์ข้อความที่ค้นหาอยู่
                     </p>
                   </div>
-                ) : visibleDepartments.length === 0 ? (
+                ) : visibleDepartmentCount === 0 ? (
                   <div className="rounded-[24px] border border-dashed border-sky-200 bg-sky-50/50 px-5 py-10 text-center sm:px-8 sm:py-12">
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-sky-600 shadow-sm ring-1 ring-sky-100">
                       <Building2 className="h-7 w-7" aria-hidden="true" />
@@ -239,43 +249,63 @@ export default function DepartmentBrowser({
                     </p>
                   </div>
                 ) : (
-                  <>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {paginatedDepartments.map((dept) => (
-                        <DepartmentCard key={dept.id} dept={dept} />
-                      ))}
-                    </div>
-
-                    {visibleDepartments.length > 0 ? (
-                      <div className="mt-5 flex flex-col items-center gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-center">
-                        <div className="flex flex-wrap items-center justify-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
-                            disabled={safeCurrentPage <= 1}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            ย้อนกลับ
-                          </button>
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
-                            หน้า {safeCurrentPage} / {totalPages}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCurrentPage(
-                                Math.min(totalPages, safeCurrentPage + 1),
-                              )
-                            }
-                            disabled={safeCurrentPage >= totalPages}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            ถัดไป
-                          </button>
+                  <div className="space-y-7">
+                    {visibleGroups.map((group) => (
+                      <section key={group.id} className="space-y-2">
+                        <div className="flex items-center gap-3 px-4 py-1 text-sm text-slate-800 sm:px-5">
+                          <h3 className="font-semibold">{group.name}</h3>
+                          <span className="ml-auto whitespace-nowrap text-xs text-slate-500 sm:text-sm">
+                            {group.departments.length.toLocaleString("th-TH")} หน่วยงาน
+                          </span>
                         </div>
-                      </div>
-                    ) : null}
-                  </>
+
+                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_12px_30px_rgba(37,99,235,0.06)]">
+                          <div className="overflow-x-auto">
+                            <table className="w-full table-fixed border-collapse text-left sm:min-w-[560px] sm:table-auto">
+                              <thead className="bg-gradient-to-r from-sky-600 to-blue-600 text-white">
+                                <tr>
+                                  <th className="w-12 px-1 py-3 text-center text-[11px] font-semibold sm:w-24 sm:px-5 sm:py-3.5 sm:text-sm">
+                                    ลำดับ
+                                  </th>
+                                  <th className="px-2 py-3 text-[11px] font-semibold sm:px-5 sm:py-3.5 sm:text-sm">
+                                    หน่วยงาน
+                                  </th>
+                                  <th className="w-20 px-1 py-3 text-center text-[10px] font-semibold sm:w-44 sm:px-5 sm:py-3.5 sm:text-sm">
+                                    แบบประเมิน
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {group.departments.map((dept, index) => (
+                                  <tr
+                                    key={dept.id}
+                                    className="transition-colors hover:bg-sky-50/60"
+                                  >
+                                    <td className="px-1 py-3 text-center text-xs font-medium text-slate-600 sm:px-5 sm:py-4 sm:text-sm">
+                                      {(index + 1).toLocaleString("th-TH")}
+                                    </td>
+                                    <td className="break-words px-2 py-3 text-[11px] font-medium leading-5 text-slate-900 sm:px-5 sm:py-4 sm:text-base">
+                                      {dept.name}
+                                    </td>
+                                    <td className="px-1.5 py-2.5 text-center sm:px-5 sm:py-3">
+                                      <Link
+                                        href={`/survey/${dept.id}`}
+                                        aria-label={`เลือกหน่วยงาน ${dept.name}`}
+                                        className="inline-flex w-full items-center justify-center rounded-lg bg-sky-600 px-1.5 py-2 text-[10px] font-semibold text-white shadow-sm transition hover:bg-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 sm:w-auto sm:rounded-xl sm:px-4 sm:text-sm"
+                                      >
+                                        <span className="sm:hidden">ประเมิน</span>
+                                        <span className="hidden sm:inline">ทำแบบประเมิน</span>
+                                      </Link>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </section>
+                    ))}
+                  </div>
                 )}
               </div>
             </>
@@ -283,44 +313,5 @@ export default function DepartmentBrowser({
         </section>
       </div>
     </main>
-  );
-}
-
-function DepartmentCard({ dept }: { dept: Department }) {
-  return (
-    <Link
-      href={`/survey/${dept.id}`}
-      aria-label={`เลือกหน่วยงาน ${dept.name}`}
-      className="group relative flex h-full min-h-[156px] flex-col justify-between overflow-hidden rounded-[24px] border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-sky-50/60 p-5 text-left shadow-[0_12px_30px_rgba(37,99,235,0.06)] transition duration-200 hover:-translate-y-1 hover:border-sky-200 hover:shadow-[0_18px_45px_rgba(37,99,235,0.10)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 sm:p-6"
-    >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 opacity-80" />
-
-      <div className="relative flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-4">
-          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-[0_10px_24px_rgba(15,23,42,0.12)] ring-1 ring-white/35">
-            <Building2
-              className="h-6 w-6"
-              strokeWidth={2.2}
-              aria-hidden="true"
-            />
-          </div>
-
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold tracking-[0.08em] text-sky-600/80 sm:text-xs">
-              หน่วยงาน
-            </p>
-            <h2 className="mt-2 break-words text-base font-bold leading-snug text-slate-900 sm:text-xl">
-              {dept.name}
-            </h2>
-          </div>
-        </div>
-      </div>
-
-      <div className="relative mt-5 flex items-center justify-end border-t border-slate-200/70 pt-4">
-        <span className="inline-flex items-center rounded-full bg-sky-600 px-4 py-2 text-[11px] font-semibold text-white shadow-sm transition group-hover:bg-sky-700 sm:text-xs">
-          ทำแบบประเมิน
-        </span>
-      </div>
-    </Link>
   );
 }

@@ -172,6 +172,90 @@ export async function createCentralQuestion({ body, set }: any) {
   }
 }
 
+export async function createCentralQuestions({ body, set }: any) {
+  const surveyId = Number(body.survey_id);
+  const questions = Array.isArray(body.questions) ? body.questions : [];
+
+  if (!Number.isFinite(surveyId) || surveyId <= 0) {
+    set.status = 400;
+    return { message: "survey_id is required" };
+  }
+  if (questions.length === 0 || questions.length > 50) {
+    set.status = 400;
+    return { message: "Questions must contain between 1 and 50 items" };
+  }
+
+  const normalizedQuestions: Array<{
+    text: string;
+    type: string;
+    displayOrder: number | null | undefined;
+  }> = questions.map((question: any) => ({
+    text: String(question.text ?? "").trim(),
+    type: String(question.type ?? ""),
+    displayOrder: parseQuestionDisplayOrder(question.display_order),
+  }));
+
+  const invalidQuestionIndex = normalizedQuestions.findIndex(
+    (question) =>
+      !question.text ||
+      !["rating", "text"].includes(question.type) ||
+      (typeof question.displayOrder === "number" &&
+        Number.isNaN(question.displayOrder)),
+  );
+
+  if (invalidQuestionIndex >= 0) {
+    set.status = 400;
+    return {
+      message: `Invalid question at item ${invalidQuestionIndex + 1}`,
+    };
+  }
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const createdIds: number[] = [];
+    for (const question of normalizedQuestions) {
+      const inserted = await client.query(
+        `
+        INSERT INTO questions (survey_id, scope, department_id, type, text, display_order, status)
+        VALUES ($1, 'central', NULL, $2, $3, 0, 'active')
+        RETURNING id
+        `,
+        [surveyId, question.type, question.text],
+      );
+
+      const id = Number(inserted.rows[0].id);
+      createdIds.push(id);
+      await reorderQuestionDisplayOrders(client, {
+        questionId: id,
+        surveyId,
+        scope: "central",
+        requestedOrder: question.displayOrder ?? null,
+      });
+    }
+
+    const created = await client.query(
+      `
+      SELECT id, survey_id, scope, type, text, display_order, status, created_at, updated_at
+      FROM questions
+      WHERE id = ANY($1::bigint[])
+      ORDER BY display_order ASC, id ASC
+      `,
+      [createdIds],
+    );
+
+    await client.query("COMMIT");
+    set.status = 201;
+    return { total: created.rowCount ?? 0, items: created.rows };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function updateCentralQuestion({ params, body, set }: any) {
   const id = Number(params.id);
   if (!Number.isFinite(id) || id <= 0) {

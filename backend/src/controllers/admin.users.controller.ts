@@ -281,6 +281,19 @@ function buildApprovalCounts(rows: Array<{ approval_status: ApprovalStatus; tota
   return counts;
 }
 
+async function fetchApprovalCounts() {
+  const countRes = await db.query(
+    `
+    SELECT approval_status, COUNT(*)::int AS total
+    FROM users
+    WHERE registration_source = 'self'
+    GROUP BY approval_status
+    `,
+  );
+
+  return buildApprovalCounts(countRes.rows);
+}
+
 function formatUserFullName(user: {
   title?: string | null;
   first_name?: string | null;
@@ -349,19 +362,16 @@ export async function listUserApprovals({ query }: any) {
     values,
   );
 
-  const countRes = await db.query(
-    `
-    SELECT approval_status, COUNT(*)::int AS total
-    FROM users
-    WHERE registration_source = 'self'
-    GROUP BY approval_status
-    `,
-  );
-
   return {
     total: res.rowCount,
-    counts: buildApprovalCounts(countRes.rows),
+    counts: await fetchApprovalCounts(),
     items: res.rows,
+  };
+}
+
+export async function getUserApprovalCounts() {
+  return {
+    counts: await fetchApprovalCounts(),
   };
 }
 

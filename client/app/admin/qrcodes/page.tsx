@@ -2,6 +2,7 @@
 "use client";
 
 import React, {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -42,6 +43,10 @@ type DeptRow = {
   id: number;
   name: string;
   is_active: boolean;
+  department_group_id: number;
+  department_group_name: string;
+  department_group_display_order: number;
+  created_at: string;
   qrcode_id: number | null;
   image_path: string | null;
   link_target: string | null;
@@ -62,8 +67,6 @@ type PageData = {
 };
 
 type KpiIcon = ComponentType<SVGProps<SVGSVGElement>>;
-
-const PAGE_SIZE = 10;
 
 const inputClass =
   "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-800 placeholder:text-slate-400 shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50";
@@ -281,20 +284,38 @@ export default function AdminQRCodesPage() {
     if (!data) return [];
     const keyword = q.trim().toLowerCase();
     if (!keyword) return data.departments;
-    return data.departments.filter((d) =>
-      d.name.toLowerCase().includes(keyword)
+    return data.departments.filter(
+      (d) =>
+        d.name.toLowerCase().includes(keyword) ||
+        d.department_group_name.toLowerCase().includes(keyword),
     );
   }, [data, q]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const groupedDepartments = useMemo(() => {
+    const groups: DeptRow[][] = [];
+
+    for (const department of filtered) {
+      const currentGroup = groups[groups.length - 1];
+      const currentGroupId = currentGroup?.[0]?.department_group_id;
+
+      if (
+        currentGroup === undefined ||
+        Number(currentGroupId) !== Number(department.department_group_id)
+      ) {
+        groups.push([department]);
+      } else {
+        currentGroup.push(department);
+      }
+    }
+
+    return groups;
+  }, [filtered]);
+
+  const totalPages = Math.max(1, groupedDepartments.length);
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const paginated = useMemo(() => {
-    const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
-    return filtered.slice(startIndex, startIndex + PAGE_SIZE);
-  }, [filtered, safeCurrentPage]);
-  const startItem = filtered.length === 0 ? 0 : (safeCurrentPage - 1) * PAGE_SIZE + 1;
-  const endItem =
-    filtered.length === 0 ? 0 : Math.min(startItem + PAGE_SIZE - 1, filtered.length);
+    return groupedDepartments[safeCurrentPage - 1] ?? [];
+  }, [groupedDepartments, safeCurrentPage]);
 
   useEffect(() => {
     setCurrentPage((page) => Math.min(page, totalPages));
@@ -661,17 +682,41 @@ export default function AdminQRCodesPage() {
                     const hasQr = !!dept.qrcode_id && !!dept.image_path;
                     const isBusyGen = busy === `dept-${dept.id}`;
                     const isBusyDl = busy === `dl-${dept.qrcode_id}`;
+                    const showGroupHeader =
+                      idx === 0 ||
+                      paginated[idx - 1]?.department_group_id !==
+                        dept.department_group_id;
 
                     return (
-                      <tr
-                        key={dept.id}
-                        className={`transition hover:bg-slate-50 ${
-                          !dept.is_active ? "opacity-50" : ""
-                        }`}
-                      >
+                      <Fragment key={dept.id}>
+                        {showGroupHeader && (
+                          <tr className="border-b border-sky-100">
+                            <td
+                              colSpan={5}
+                              className="bg-gradient-to-r from-sky-50 via-cyan-50/80 to-blue-50 px-5 py-2.5 text-sky-700"
+                            >
+                              <div className="flex items-center gap-2.5 text-sm font-bold">
+                                <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-sky-200 bg-white/80">
+                                  <Building2
+                                    className="h-4 w-4"
+                                    strokeWidth={2}
+                                    aria-hidden="true"
+                                  />
+                                </span>
+                                {dept.department_group_name}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+
+                        <tr
+                          className={`transition hover:bg-slate-50 ${
+                            !dept.is_active ? "opacity-50" : ""
+                          }`}
+                        >
                         {/* ลำดับ */}
                         <td className="px-5 py-3 text-center text-slate-500">
-                          {startItem + idx}
+                          {idx + 1}
                         </td>
 
                         {/* ชื่อหน่วยงาน */}
@@ -803,7 +848,8 @@ export default function AdminQRCodesPage() {
                             )}
                           </div>
                         </td>
-                      </tr>
+                        </tr>
+                      </Fragment>
                     );
                   })
                 )}
@@ -815,7 +861,7 @@ export default function AdminQRCodesPage() {
           {filtered.length > 0 && (
             <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs text-slate-400">
-                แสดง {startItem} - {endItem} จาก {filtered.length} หน่วยงาน
+                ทั้งหมด{" "} {filtered.length.toLocaleString("th-TH")} หน่วยงาน
               </div>
               <div className="flex items-center gap-2 sm:ml-auto">
                 <button
@@ -827,7 +873,7 @@ export default function AdminQRCodesPage() {
                   ย้อนกลับ
                 </button>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
-                  หน้า {safeCurrentPage} / {totalPages}
+                  กลุ่ม {groupedDepartments.length === 0 ? 0 : safeCurrentPage} / {groupedDepartments.length}
                 </div>
                 <button
                   type="button"

@@ -458,10 +458,9 @@ export async function getDepartmentSummary({ params, request, set }: any) {
             q.scope = 'central'
             AND EXISTS (
               SELECT 1
-              FROM department_central_question_settings dcqs
-              WHERE dcqs.department_id = $2
-                AND dcqs.survey_id = $1
-                AND dcqs.enabled = true
+              FROM department_central_questions dcq
+              WHERE dcq.department_id = $2
+                AND dcq.question_id = q.id
             )
           )
           OR (q.scope = 'department' AND q.department_id = $2)

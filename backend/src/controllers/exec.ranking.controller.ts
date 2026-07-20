@@ -63,6 +63,34 @@ function getClippedWeekEnd(weekStartText: string, month: number | null) {
 
 export async function getExecRanking({ query, set }: any) {
   const activeSurvey = await getActiveSurvey();
+  const departmentGroupsRes = await db.query(
+    `
+    SELECT id, name, display_order
+    FROM department_groups
+    WHERE is_active = true
+    ORDER BY display_order ASC, id ASC
+    `,
+  );
+
+  const selectedDepartmentGroupId = parsePositiveInt(query?.departmentGroupId);
+  if (
+    query?.departmentGroupId !== undefined &&
+    selectedDepartmentGroupId === null
+  ) {
+    set.status = 400;
+    return { message: "Invalid departmentGroupId" };
+  }
+
+  const selectedDepartmentGroup = selectedDepartmentGroupId
+    ? departmentGroupsRes.rows.find(
+        (group) => Number(group.id) === selectedDepartmentGroupId,
+      ) ?? null
+    : null;
+
+  if (selectedDepartmentGroupId && !selectedDepartmentGroup) {
+    set.status = 400;
+    return { message: "Department group not found or inactive" };
+  }
 
   const availableSurveysRes = await db.query(
     `
@@ -174,6 +202,18 @@ export async function getExecRanking({ query, set }: any) {
 
   let filterClause = " AND r.survey_id = $1";
   const filterParams: Array<number | string> = [Number(selectedSurvey.id)];
+  let departmentGroupParamIndex: number | null = null;
+
+  if (selectedDepartmentGroupId) {
+    departmentGroupParamIndex = filterParams.length + 1;
+    filterClause += ` AND EXISTS (
+      SELECT 1
+      FROM departments filter_department
+      WHERE filter_department.id = r.department_id
+        AND filter_department.department_group_id = $${departmentGroupParamIndex}
+    )`;
+    filterParams.push(selectedDepartmentGroupId);
+  }
 
   if (respondentGroup) {
     filterClause += ` AND r.respondent_group = $${filterParams.length + 1}`;
@@ -228,12 +268,17 @@ export async function getExecRanking({ query, set }: any) {
     SELECT
       d.id AS department_id,
       d.name AS department_name,
+      dg.id AS department_group_id,
+      dg.name AS department_group_name,
+      dg.display_order AS department_group_display_order,
       COALESCE(rc.total_responses, 0)::int AS total_responses,
       ra.avg_rating
     FROM departments d
+    JOIN department_groups dg ON dg.id = d.department_group_id
     LEFT JOIN response_counts rc ON rc.department_id = d.id
     LEFT JOIN rating_avgs ra ON ra.department_id = d.id
     WHERE d.is_active = true
+      ${departmentGroupParamIndex ? `AND dg.id = $${departmentGroupParamIndex}` : ""}
     ORDER BY ra.avg_rating DESC NULLS LAST, COALESCE(rc.total_responses, 0) DESC, d.name ASC
     `,
     filterParams,
@@ -259,6 +304,15 @@ export async function getExecRanking({ query, set }: any) {
 
   let monthsOptionClause = "WHERE r.survey_id = $1";
   const monthsOptionParams: Array<number | string> = [Number(selectedSurvey.id)];
+  if (selectedDepartmentGroupId) {
+    monthsOptionClause += ` AND EXISTS (
+      SELECT 1
+      FROM departments filter_department
+      WHERE filter_department.id = r.department_id
+        AND filter_department.department_group_id = $${monthsOptionParams.length + 1}
+    )`;
+    monthsOptionParams.push(selectedDepartmentGroupId);
+  }
   if (respondentGroup) {
     monthsOptionClause += ` AND r.respondent_group = $${monthsOptionParams.length + 1}`;
     monthsOptionParams.push(respondentGroup);
@@ -276,6 +330,15 @@ export async function getExecRanking({ query, set }: any) {
 
   let periodOptionClause = "WHERE r.survey_id = $1";
   const periodOptionParams: Array<number | string> = [Number(selectedSurvey.id)];
+  if (selectedDepartmentGroupId) {
+    periodOptionClause += ` AND EXISTS (
+      SELECT 1
+      FROM departments filter_department
+      WHERE filter_department.id = r.department_id
+        AND filter_department.department_group_id = $${periodOptionParams.length + 1}
+    )`;
+    periodOptionParams.push(selectedDepartmentGroupId);
+  }
   if (respondentGroup) {
     periodOptionClause += ` AND r.respondent_group = $${periodOptionParams.length + 1}`;
     periodOptionParams.push(respondentGroup);
@@ -333,15 +396,29 @@ export async function getExecRanking({ query, set }: any) {
     dayOptionParams,
   );
 
+  const respondentGroupParams: Array<number> = [Number(selectedSurvey.id)];
+  const respondentGroupDepartmentClause = selectedDepartmentGroupId
+    ? `AND EXISTS (
+        SELECT 1
+        FROM departments filter_department
+        WHERE filter_department.id = r.department_id
+          AND filter_department.department_group_id = $2
+      )`
+    : "";
+  if (selectedDepartmentGroupId) {
+    respondentGroupParams.push(selectedDepartmentGroupId);
+  }
+
   const respondentGroupsRes = await db.query(
     `
     SELECT respondent_group AS value, COUNT(*)::int AS count
     FROM responses r
     WHERE r.survey_id = $1
+      ${respondentGroupDepartmentClause}
     GROUP BY respondent_group
     ORDER BY respondent_group ASC
     `,
-    [Number(selectedSurvey.id)],
+    respondentGroupParams,
   );
 
   const bandsRes = await db.query(`
@@ -366,6 +443,9 @@ export async function getExecRanking({ query, set }: any) {
     rankings: rankingRes.rows.map((row) => ({
       department_id: Number(row.department_id),
       department_name: String(row.department_name),
+      department_group_id: Number(row.department_group_id),
+      department_group_name: String(row.department_group_name),
+      department_group_display_order: Number(row.department_group_display_order),
       total_responses: Number(row.total_responses || 0),
       avg_rating: row.avg_rating !== null ? Number(row.avg_rating) : 0,
     })),
@@ -386,6 +466,11 @@ export async function getExecRanking({ query, set }: any) {
       months: monthsRes.rows.map((row) => Number(row.month)),
       weeks: weeksRes.rows,
       days: daysRes.rows.map((row) => row.date),
+      department_groups: departmentGroupsRes.rows.map((group) => ({
+        id: Number(group.id),
+        name: String(group.name),
+        display_order: Number(group.display_order),
+      })),
       respondent_groups: respondentGroupsRes.rows.map((row) => ({
         value: row.value,
         count: Number(row.count || 0),
@@ -399,6 +484,7 @@ export async function getExecRanking({ query, set }: any) {
         week_start: selectedWeekStart,
         date: selectedDate,
         respondent_group: respondentGroup,
+        department_group_id: selectedDepartmentGroupId,
       },
     },
   };

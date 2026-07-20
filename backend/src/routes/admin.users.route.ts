@@ -3,6 +3,7 @@ import {
   approveUserRegistration,
   createUser,
   deleteUser,
+  getUserApprovalCounts,
   listUserApprovals,
   listUsers,
   rejectUserRegistration,
@@ -13,6 +14,7 @@ import {
 
 export const adminUsersRoute = new Elysia({ prefix: "/api/admin" })
   .get("/users", listUsers)
+  .get("/user-approvals/counts", getUserApprovalCounts)
   .get("/user-approvals", listUserApprovals)
   .put("/user-approvals/:id/approve", approveUserRegistration, {
     params: t.Object({ id: t.String() }),

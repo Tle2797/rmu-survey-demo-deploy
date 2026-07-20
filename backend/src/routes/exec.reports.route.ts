@@ -13,6 +13,7 @@ export const execReportsRoute = new Elysia({ prefix: "/api/exec" }).get(
       weekStart: t.Optional(t.String()),
       date: t.Optional(t.String()),
       respondentGroup: t.Optional(t.String()),
+      departmentGroupId: t.Optional(t.String()),
     }),
   },
 );

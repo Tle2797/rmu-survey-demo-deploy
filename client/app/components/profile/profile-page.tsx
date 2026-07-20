@@ -54,6 +54,7 @@ type UploadResponse = {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3080";
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const PROFILE_UPDATED_EVENT = "profile:updated";
 
 const ACCEPTED_IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -403,6 +404,7 @@ export default function ProfilePage() {
       setShowProfileEditor(false);
       setPassword("");
       setConfirmPassword("");
+      window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT));
       await showProfileSuccess("บันทึกสำเร็จ", "บันทึกข้อมูลส่วนตัวเรียบร้อยแล้ว");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "บันทึกข้อมูลไม่สำเร็จ";
@@ -455,6 +457,7 @@ export default function ProfilePage() {
           : prev,
       );
       setAvatarLoadFailed(false);
+      window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT));
       await showProfileSuccess("อัปโหลดสำเร็จ", "อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "อัปโหลดรูปไม่สำเร็จ";
@@ -559,6 +562,7 @@ export default function ProfilePage() {
               <div className="relative">
                 <div className="flex h-40 w-40 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-gradient-to-br from-sky-100 via-white to-blue-100 text-5xl font-black text-sky-700 shadow-[0_18px_35px_rgba(37,99,235,0.16)] ring-4 ring-sky-100/60">
                   {avatarUrl && !avatarLoadFailed ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={avatarUrl}
                       alt={`${fullName} profile`}

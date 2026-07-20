@@ -10,8 +10,16 @@ import {
   type SVGProps,
 } from "react";
 import { apiGet } from "@/lib/api";
+import { usePathname } from "next/navigation";
+import {
+  buildExcelXmlWorkbook,
+  downloadExcelFile,
+  excelCell,
+  sanitizeExcelFileName,
+  spacerRow,
+  type ExcelXmlRow,
+} from "@/lib/excel-xml";
 import { useReactToPrint } from "react-to-print";
-import * as XLSX from "xlsx";
 import {
   Award,
   Building2,
@@ -37,6 +45,9 @@ type RespondentGroup = "student" | "staff" | "public";
 type DepartmentRank = {
   department_id: number;
   department_name: string;
+  department_group_id: number;
+  department_group_name: string;
+  department_group_display_order: number;
   total_responses: number;
   avg_rating: number;
 };
@@ -70,6 +81,11 @@ type RankingData = {
       value: RespondentGroup;
       count: number;
     }[];
+    department_groups: {
+      id: number;
+      name: string;
+      display_order: number;
+    }[];
     selected: {
       survey_id: number;
       year_be: number | null;
@@ -78,20 +94,20 @@ type RankingData = {
       week_start: string | null;
       date: string | null;
       respondent_group: RespondentGroup | null;
+      department_group_id: number | null;
     };
   };
 };
 
 type RankingFilters = {
   surveyId: string;
+  departmentGroupId: string;
   month: string;
   weekStart: string;
   date: string;
 };
 
 type KpiIcon = ComponentType<SVGProps<SVGSVGElement>>;
-
-const PAGE_SIZE = 10;
 
 const RANKING_THEMES = {
   total: {
@@ -312,6 +328,154 @@ function getBand(score: number, bands: RatingBand[]) {
   };
 }
 
+function buildRankingExcelXml({
+  data,
+  rankings,
+  ratingBands,
+  surveyTitle,
+  selectedPeriodLabel,
+  selectedDepartmentGroupLabel,
+  overallBandLabel,
+  tableTitle,
+}: {
+  data: RankingData;
+  rankings: DepartmentRank[];
+  ratingBands: RatingBand[];
+  surveyTitle: string;
+  selectedPeriodLabel: string;
+  selectedDepartmentGroupLabel: string;
+  overallBandLabel: string;
+  tableTitle: string;
+}) {
+  const groupsById = new Map<
+    number,
+    {
+      id: number;
+      name: string;
+      displayOrder: number;
+      departments: DepartmentRank[];
+    }
+  >();
+
+  for (const department of rankings) {
+    const groupId = Number(department.department_group_id);
+    const group = groupsById.get(groupId);
+
+    if (group) {
+      group.departments.push(department);
+    } else {
+      groupsById.set(groupId, {
+        id: groupId,
+        name: department.department_group_name,
+        displayOrder: Number(department.department_group_display_order),
+        departments: [department],
+      });
+    }
+  }
+
+  const rankingGroups = Array.from(groupsById.values()).sort(
+    (a, b) => a.displayOrder - b.displayOrder || a.id - b.id,
+  );
+  const rankingHeaderRow: ExcelXmlRow = {
+    autoFitHeight: true,
+    cells: [
+      excelCell("อันดับ", "Header"),
+      excelCell("หน่วยงาน", "Header"),
+      excelCell("คะแนนเฉลี่ย", "Header"),
+      excelCell("ผลประเมิน", "Header"),
+    ],
+  };
+
+  const rows: ExcelXmlRow[] = [
+    {
+      height: 28,
+      cells: [
+        excelCell(`รายงาน${tableTitle}`, "Title", {
+          mergeAcross: 3,
+        }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("แบบประเมิน", "MetaLabel"),
+        excelCell(surveyTitle, "MetaValue", { mergeAcross: 2 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("ช่วงรายงาน", "MetaLabel"),
+        excelCell(selectedPeriodLabel, "MetaValue", { mergeAcross: 2 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("กลุ่มหน่วยงาน", "MetaLabel"),
+        excelCell(selectedDepartmentGroupLabel, "MetaValue", { mergeAcross: 2 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("คะแนนเฉลี่ยรวม", "MetaLabel"),
+        excelCell(formatScore(data.university_avg), "MetaValue", {
+          mergeAcross: 2,
+        }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("ผลการประเมิน", "MetaLabel"),
+        excelCell(overallBandLabel, "MetaValue", { mergeAcross: 2 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("หน่วยงานทั้งหมด", "MetaLabel"),
+        excelCell(rankings.length, "MetaValueLeft", {
+          type: "Number",
+          mergeAcross: 2,
+        }),
+      ],
+    },
+    spacerRow(4),
+    ...(rankingGroups.length === 0
+      ? [rankingHeaderRow]
+      : rankingGroups.flatMap((group, groupIndex) => [
+          {
+            height: 22,
+            autoFitHeight: true,
+            cells: [excelCell(group.name, "Default", { mergeAcross: 3 })],
+          },
+          rankingHeaderRow,
+          ...group.departments.map((department, index) => ({
+            autoFitHeight: true,
+            cells: [
+              excelCell(index + 1, "CenterCell", { type: "Number" }),
+              excelCell(department.department_name, "Cell"),
+              excelCell(formatScore(department.avg_rating), "CenterCell"),
+              excelCell(
+                getBand(department.avg_rating, ratingBands).label,
+                "CenterCell",
+              ),
+            ],
+          })),
+          ...(groupIndex < rankingGroups.length - 1
+            ? [spacerRow(4, 8)]
+            : []),
+        ])),
+  ];
+
+  return buildExcelXmlWorkbook({
+    documentTitle: tableTitle,
+    sheets: [
+      {
+        name: tableTitle,
+        columns: [150, 390, 120, 180],
+        rows,
+      },
+    ],
+  });
+}
+
 function KpiCard({
   icon: Icon,
   title,
@@ -398,12 +562,18 @@ function LoadingSkeleton() {
 }
 
 export default function ExecRankingPage() {
+  const pathname = usePathname();
+  const isAdminView = pathname.startsWith("/admin/");
+  const tableTitle = isAdminView
+    ? "ตารางผลการประเมินหน่วยงาน"
+    : "ตารางจัดอันดับหน่วยงาน";
   const [data, setData] = useState<RankingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rankingFilters, setRankingFilters] = useState<RankingFilters>({
     surveyId: "",
+    departmentGroupId: "",
     month: "",
     weekStart: "",
     date: "",
@@ -423,6 +593,9 @@ export default function ExecRankingPage() {
           params.set("weekStart", rankingFilters.weekStart);
         }
         if (rankingFilters.date) params.set("date", rankingFilters.date);
+        if (rankingFilters.departmentGroupId) {
+          params.set("departmentGroupId", rankingFilters.departmentGroupId);
+        }
 
         const queryString = params.toString();
         const result = await apiGet<RankingData>(
@@ -471,6 +644,24 @@ export default function ExecRankingPage() {
           ]
         : [];
   const monthOptions = data?.filters?.months ?? [];
+  const departmentGroupOptions = data?.filters?.department_groups ?? [];
+  const selectedDepartmentGroupId =
+    rankingFilters.departmentGroupId ||
+    (data?.filters?.selected?.department_group_id
+      ? String(data.filters.selected.department_group_id)
+      : "");
+  const selectedDepartmentGroupLabel = selectedDepartmentGroupId
+    ? departmentGroupOptions.find(
+        (group) => String(group.id) === selectedDepartmentGroupId,
+      )?.name ?? `กลุ่ม #${selectedDepartmentGroupId}`
+    : "ทุกกลุ่มหน่วยงาน";
+  const selectedGroupHasNoEvaluationData =
+    Boolean(selectedDepartmentGroupId) &&
+    Boolean(data) &&
+    data?.total_responses === 0;
+  const rankingEmptyMessage = selectedGroupHasNoEvaluationData
+    ? `ไม่พบข้อมูลการประเมินของกลุ่ม “${selectedDepartmentGroupLabel}” ในช่วงเวลาที่เลือก`
+    : "ยังไม่มีข้อมูลการประเมิน";
   const weekOptions = rankingFilters.month ? data?.filters?.weeks ?? [] : [];
   const dayOptions =
     rankingFilters.month && rankingFilters.weekStart
@@ -532,20 +723,54 @@ export default function ExecRankingPage() {
   ];
   const overallBand = getBand(data?.university_avg ?? 0, ratingBands);
 
-  const paginatedRankings = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return rankings.slice(start, start + PAGE_SIZE);
-  }, [currentPage, rankings]);
+  const rankingGroups = useMemo(() => {
+    const groupsById = new Map<
+      number,
+      {
+        id: number;
+        name: string;
+        displayOrder: number;
+        departments: DepartmentRank[];
+      }
+    >();
 
-  const totalPages = Math.max(1, Math.ceil(rankings.length / PAGE_SIZE));
+    for (const department of rankings) {
+      const groupId = Number(department.department_group_id);
+      const group = groupsById.get(groupId);
+
+      if (group) {
+        group.departments.push(department);
+      } else {
+        groupsById.set(groupId, {
+          id: groupId,
+          name: department.department_group_name,
+          displayOrder: Number(department.department_group_display_order),
+          departments: [department],
+        });
+      }
+    }
+
+    return Array.from(groupsById.values()).sort(
+      (a, b) => a.displayOrder - b.displayOrder || a.id - b.id,
+    );
+  }, [rankings]);
+
+  const totalPages = Math.max(1, rankingGroups.length);
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const currentRankingGroup = rankingGroups[safeCurrentPage - 1] ?? null;
+  const paginatedRankings = currentRankingGroup?.departments ?? [];
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   const printReport = useReactToPrint({
     contentRef: printRef,
-    documentTitle: `ตารางจัดอันดับหน่วยงาน_${data?.survey?.year_be ?? "latest"}`,
+    documentTitle: `${tableTitle}_${data?.survey?.year_be ?? "latest"}`,
     pageStyle: `
       @page {
         size: A4;
-        margin: 8mm;
+        margin: 12mm 10mm 10mm;
       }
       @media print {
         html,
@@ -589,30 +814,21 @@ export default function ExecRankingPage() {
   const exportExcel = () => {
     if (!data) return;
 
-    const rows = [
-      ["รายงานตารางจัดอันดับหน่วยงาน"],
-      ["แบบประเมิน", surveyTitle],
-      ["ช่วงรายงาน", selectedPeriodLabel],
-      ["คะแนนเฉลี่ยรวม", formatScore(data.university_avg)],
-      ["ผลการประเมิน", overallBand.label],
-      ["หน่วยงานทั้งหมด", rankings.length],
-      [],
-      ["อันดับ", "หน่วยงาน", "คะแนนเฉลี่ย", "ผลประเมิน"],
-      ...rankings.map((department, index) => [
-        index + 1,
-        department.department_name,
-        formatScore(department.avg_rating),
-        getBand(department.avg_rating, ratingBands).label,
-      ]),
-    ];
-
-    const worksheet = XLSX.utils.aoa_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Department Ranking");
-    XLSX.writeFile(
-      workbook,
-      `ตารางจัดอันดับหน่วยงาน_${data.survey?.year_be ?? "latest"}.xlsx`,
+    const excelContent = buildRankingExcelXml({
+      data,
+      rankings,
+      ratingBands,
+      surveyTitle,
+      selectedPeriodLabel,
+      selectedDepartmentGroupLabel,
+      overallBandLabel: overallBand.label,
+      tableTitle,
+    });
+    const fileName = sanitizeExcelFileName(
+      `${tableTitle}_${data.survey?.year_be ?? "latest"}.xls`,
     );
+
+    downloadExcelFile(fileName, excelContent);
   };
 
   const retry = () => {
@@ -658,10 +874,12 @@ export default function ExecRankingPage() {
               </div>
               <div className="min-w-0">
                 <h1 className="mt-1 text-2xl font-bold text-white">
-                  จัดอันดับหน่วยงาน
+                  {isAdminView ? "ดูผลการประเมิน" : "จัดอันดับหน่วยงาน"}
                 </h1>
                 <p className="mt-1 text-sm text-sky-100/90">
-                  สรุปคะแนนเฉลี่ยและผลประเมินของแต่ละหน่วยงาน
+                  {isAdminView
+                    ? "ดูคะแนนเฉลี่ยและผลการประเมินของทุกหน่วยงาน"
+                    : "สรุปคะแนนเฉลี่ยและผลประเมินของแต่ละหน่วยงาน"}
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-sky-100/90">
                   <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1.5 backdrop-blur-md">
@@ -730,6 +948,7 @@ export default function ExecRankingPage() {
               onClick={() =>
                 setRankingFilters({
                   surveyId: "",
+                  departmentGroupId: "",
                   month: "",
                   weekStart: "",
                   date: "",
@@ -765,7 +984,28 @@ export default function ExecRankingPage() {
               </select>
             </label>
 
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-slate-700 xl:col-start-1 xl:row-start-2">
+              เลือกกลุ่มหน่วยงาน
+              <select
+                value={selectedDepartmentGroupId}
+                onChange={(event) =>
+                  setRankingFilters((current) => ({
+                    ...current,
+                    departmentGroupId: event.target.value,
+                  }))
+                }
+                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+              >
+                <option value="">ทุกกลุ่มหน่วยงาน</option>
+                {departmentGroupOptions.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm font-semibold text-slate-700 xl:col-start-3 xl:row-start-1">
               เลือกเดือน / เดือนที่มีข้อมูล
               <select
                 value={rankingFilters.month}
@@ -791,7 +1031,7 @@ export default function ExecRankingPage() {
               </select>
             </label>
 
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-slate-700 xl:col-start-4 xl:row-start-1">
               เลือกสัปดาห์ / สัปดาห์ที่มีข้อมูล
               <select
                 value={rankingFilters.weekStart}
@@ -816,7 +1056,7 @@ export default function ExecRankingPage() {
               </select>
             </label>
 
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-slate-700 xl:col-start-5 xl:row-start-1">
               เลือกวัน / วันที่มีข้อมูล
               <select
                 value={rankingFilters.date}
@@ -847,6 +1087,9 @@ export default function ExecRankingPage() {
           <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
             <CalendarDays className="h-4 w-4 text-slate-400" />
             <span>ช่วงรายงาน: {selectedPeriodLabel}</span>
+            <span className="text-slate-300">•</span>
+            <Building2 className="h-4 w-4 text-slate-400" />
+            <span>กลุ่มหน่วยงาน: {selectedDepartmentGroupLabel}</span>
           </div>
         </section>
 
@@ -886,6 +1129,14 @@ export default function ExecRankingPage() {
                 font-weight: 800;
                 color: #1e293b;
               }
+              .ranking-print-group-title {
+                margin: 8px 0 4px;
+                font-size: 11px;
+                font-weight: 400;
+                color: #000000;
+                break-after: avoid-page;
+                page-break-after: avoid;
+              }
               .ranking-print-footer {
                 margin-top: 10px;
                 padding-top: 6px;
@@ -922,7 +1173,7 @@ export default function ExecRankingPage() {
                     lineHeight: 1.35,
                   }}
                 >
-                  รายงานตารางจัดอันดับหน่วยงาน
+                  รายงาน{tableTitle}
                 </div>
                 <div style={{ marginTop: "2px", fontSize: "13px", color: "#334155" }}>
                   {surveyTitle}
@@ -963,23 +1214,29 @@ export default function ExecRankingPage() {
                     {formatCount(rankings.length)}
                   </td>
                 </tr>
+                <tr>
+                  <td>
+                    <span style={{ fontWeight: 700 }}>กลุ่มหน่วยงาน :</span>{" "}
+                    {selectedDepartmentGroupLabel}
+                  </td>
+                </tr>
               </tbody>
             </table>
 
             <div className="ranking-print-section-title">
-              ตารางจัดอันดับหน่วยงาน
+              {tableTitle}
             </div>
-            <table className="ranking-print-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "50px" }}>อันดับ</th>
-                  <th>หน่วยงาน</th>
-                  <th style={{ width: "90px" }}>คะแนนเฉลี่ย</th>
-                  <th style={{ width: "120px" }}>ผลประเมิน</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rankings.length === 0 ? (
+            {rankings.length === 0 ? (
+              <table className="ranking-print-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: "50px" }}>อันดับ</th>
+                    <th>หน่วยงาน</th>
+                    <th style={{ width: "90px" }}>คะแนนเฉลี่ย</th>
+                    <th style={{ width: "120px" }}>ผลประเมิน</th>
+                  </tr>
+                </thead>
+                <tbody>
                   <tr>
                     <td
                       colSpan={4}
@@ -992,25 +1249,43 @@ export default function ExecRankingPage() {
                       ยังไม่มีข้อมูลการประเมิน
                     </td>
                   </tr>
-                ) : (
-                  rankings.map((department, index) => {
-                    const band = getBand(department.avg_rating, ratingBands);
-                    return (
-                      <tr key={`print-${department.department_id}`}>
-                        <td style={{ textAlign: "center" }}>{index + 1}</td>
-                        <td style={{ fontWeight: 600 }}>
-                          {department.department_name}
-                        </td>
-                        <td style={{ textAlign: "center", fontWeight: 700 }}>
-                          {formatScore(department.avg_rating)}
-                        </td>
-                        <td style={{ textAlign: "center" }}>{band.label}</td>
+                </tbody>
+              </table>
+            ) : (
+              rankingGroups.map((group) => (
+                <div key={`print-group-${group.id}`}>
+                  <div className="ranking-print-group-title">{group.name}</div>
+                  <table className="ranking-print-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "50px" }}>อันดับ</th>
+                        <th>หน่วยงาน</th>
+                        <th style={{ width: "90px" }}>คะแนนเฉลี่ย</th>
+                        <th style={{ width: "120px" }}>ผลประเมิน</th>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                      {group.departments.map((department, index) => {
+                        const band = getBand(department.avg_rating, ratingBands);
+
+                        return (
+                          <tr key={`print-${department.department_id}`}>
+                            <td style={{ textAlign: "center" }}>{index + 1}</td>
+                            <td style={{ fontWeight: 600 }}>
+                              {department.department_name}
+                            </td>
+                            <td style={{ textAlign: "center", fontWeight: 700 }}>
+                              {formatScore(department.avg_rating)}
+                            </td>
+                            <td style={{ textAlign: "center" }}>{band.label}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ))
+            )}
 
             <div className="ranking-print-footer">
               <span>
@@ -1023,7 +1298,7 @@ export default function ExecRankingPage() {
 
         <Section
           icon={ListOrdered}
-          title="ตารางจัดอันดับหน่วยงาน"
+          title={tableTitle}
           right={
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -1047,6 +1322,14 @@ export default function ExecRankingPage() {
             </div>
           }
         >
+          {!selectedGroupHasNoEvaluationData && currentRankingGroup ? (
+            <div className="flex items-center gap-2.5 border-b border-sky-200 px-5 py-3 text-sm text-slate-800 sm:px-6">
+              <span className="font-semibold">{currentRankingGroup.name}</span>
+              <span className="ml-auto rounded-full border border-sky-200 bg-white/90 px-2.5 py-1 text-xs font-medium text-sky-700">
+                {formatCount(paginatedRankings.length)} หน่วยงาน
+              </span>
+            </div>
+          ) : null}
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="border-b border-blue-700/20 bg-gradient-to-r from-sky-600 to-blue-600 text-white">
@@ -1058,16 +1341,24 @@ export default function ExecRankingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rankings.length === 0 ? (
+                {selectedGroupHasNoEvaluationData || rankings.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-slate-500" colSpan={4}>
-                      ยังไม่มีข้อมูลการประเมิน
+                    <td className="px-4 py-10 text-center" colSpan={4}>
+                      <div className="flex flex-col items-center gap-2 text-amber-700">
+                        <CircleAlert className="h-8 w-8" aria-hidden="true" />
+                        <span className="font-medium">{rankingEmptyMessage}</span>
+                        {selectedGroupHasNoEvaluationData ? (
+                          <span className="text-xs font-normal text-slate-500">
+                            กรุณาเลือกกลุ่มหน่วยงานหรือช่วงรายงานอื่น
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ) : (
                   paginatedRankings.map((department, index) => {
                     const band = getBand(department.avg_rating, ratingBands);
-                    const rank = (currentPage - 1) * PAGE_SIZE + index + 1;
+                    const rank = index + 1;
 
                     return (
                       <tr key={department.department_id} className="transition hover:bg-slate-50">
@@ -1100,7 +1391,7 @@ export default function ExecRankingPage() {
               </tbody>
             </table>
           </div>
-          {rankings.length > 0 ? (
+          {rankings.length > 0 && !selectedGroupHasNoEvaluationData ? (
             <div className="flex flex-col gap-3 border-t border-slate-200/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm text-slate-500">
                 ทั้งหมด {formatCount(rankings.length)} หน่วยงาน
@@ -1109,18 +1400,18 @@ export default function ExecRankingPage() {
                 <button
                   type="button"
                   onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                  disabled={currentPage === 1}
+                  disabled={safeCurrentPage === 1}
                   className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   ย้อนกลับ
                 </button>
                 <div className="rounded-xl bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700">
-                  หน้า {currentPage} / {totalPages}
+                  กลุ่ม {rankingGroups.length === 0 ? 0 : safeCurrentPage} / {rankingGroups.length}
                 </div>
                 <button
                   type="button"
                   onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-                  disabled={currentPage === totalPages}
+                  disabled={safeCurrentPage === totalPages}
                   className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   ถัดไป

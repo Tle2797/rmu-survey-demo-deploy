@@ -3,11 +3,21 @@ import { db } from "../config/db";
 export async function listDepartments() {
   const sql = `
     SELECT
-      id,
-      name
-    FROM departments
-    WHERE is_active = true
-    ORDER BY id ASC
+      d.id,
+      d.name,
+      dg.id AS department_group_id,
+      dg.name AS department_group_name,
+      dg.display_order AS department_group_display_order
+    FROM departments d
+    JOIN department_groups dg
+      ON dg.id = d.department_group_id
+     AND dg.is_active = true
+    WHERE d.is_active = true
+    ORDER BY
+      dg.display_order ASC,
+      dg.id ASC,
+      d.created_at ASC,
+      d.id ASC
   `;
 
   const result = await db.query(sql);

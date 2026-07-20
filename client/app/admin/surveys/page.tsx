@@ -46,6 +46,7 @@ type StatusFilter = "all" | "active" | "inactive";
 type KpiIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
 const PAGE_SIZE = 10;
+const SURVEY_TITLE_PREFIX = "แบบประเมินการให้บริการ ปี";
 
 const inputClass =
   "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-800 placeholder:text-slate-400 shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50";
@@ -79,6 +80,30 @@ const SURVEY_OVERVIEW_THEMES = {
 
 function getDefaultYearBe() {
   return new Date().getFullYear() + 543;
+}
+
+function getCurrentYearBe() {
+  const currentYearCe = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+    }).format(new Date()),
+  );
+
+  return currentYearCe + 543;
+}
+
+function buildSurveyTitle(yearBe: number) {
+  return `${SURVEY_TITLE_PREFIX} ${yearBe}`;
+}
+
+function getNextSurveyYearBe(items: SurveyRow[]) {
+  const latestYearBe = items.reduce(
+    (latest, item) => Math.max(latest, Number(item.year_be) || 0),
+    0,
+  );
+
+  return latestYearBe >= 2500 ? latestYearBe + 1 : getDefaultYearBe();
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -392,11 +417,12 @@ export default function AdminSurveysPage() {
     filteredItems.length === 0 ? 0 : (safeCurrentPage - 1) * PAGE_SIZE + 1;
 
   const openCreate = () => {
+    const nextYearBe = getNextSurveyYearBe(items);
     setMode("create");
     setEditing(null);
-    setTitle("");
+    setTitle(buildSurveyTitle(nextYearBe));
     setDescription("");
-    setYearBe(getDefaultYearBe());
+    setYearBe(nextYearBe);
     setOpen(true);
   };
 
@@ -415,19 +441,21 @@ export default function AdminSurveysPage() {
     setMode("create");
     setTitle("");
     setDescription("");
-    setYearBe(getDefaultYearBe());
+    setYearBe(getNextSurveyYearBe(items));
   };
 
   const save = async () => {
     try {
       setError("");
 
+      if (!yearBe || yearBe < 2500) {
+        throw new Error("กรุณากรอกปีการศึกษาให้ถูกต้อง (พ.ศ.)");
+      }
+
+      const isCreate = mode === "create";
       const payloadTitle = title.trim();
       if (!payloadTitle) {
         throw new Error("กรุณากรอกชื่อแบบสอบถาม");
-      }
-      if (!yearBe || yearBe < 2500) {
-        throw new Error("กรุณากรอกปีการศึกษาให้ถูกต้อง (พ.ศ.)");
       }
 
       const payloadDescription = description.trim();
@@ -444,7 +472,6 @@ export default function AdminSurveysPage() {
       }
 
       setBusy(true);
-      const isCreate = mode === "create";
 
       if (isCreate) {
         await apiPost("/api/admin/surveys", payload);
@@ -473,6 +500,24 @@ export default function AdminSurveysPage() {
       setError("");
 
       const nextActive = !row.is_active;
+      const currentYearBe = getCurrentYearBe();
+      if (nextActive && row.year_be < currentYearBe) {
+        await Swal.fire({
+          icon: "warning",
+          title: "ไม่สามารถเปิดแบบสอบถามย้อนหลังได้",
+          text: `ปีการศึกษา ${row.year_be} เป็นปีก่อน พ.ศ. ${currentYearBe} ระบบอนุญาตให้เปิดเฉพาะปีปัจจุบันหรือปีอนาคต`,
+          confirmButtonText: "ตกลง",
+          confirmButtonColor: "#2563eb",
+          customClass: {
+            popup:
+              "rounded-3xl border border-amber-100 shadow-[0_24px_80px_rgba(15,23,42,0.14)]",
+            title: "text-xl font-semibold text-slate-900",
+            htmlContainer: "text-sm leading-6 text-slate-500",
+          },
+        });
+        return;
+      }
+
       const result = await Swal.fire({
         icon: "question",
         title: nextActive ? "เปิดใช้งานแบบสอบถาม" : "ปิดใช้งานแบบสอบถาม",
@@ -722,30 +767,30 @@ export default function AdminSurveysPage() {
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_18px_50px_rgba(37,99,235,0.08)]">
+        <div className="overflow-hidden rounded-3xl border border-sky-100 bg-white/95 shadow-[0_20px_55px_rgba(37,99,235,0.10)]">
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-blue-700/20 bg-gradient-to-r from-sky-600 to-blue-600 text-white">
-                <tr>
-                  <th className="w-[80px] px-4 py-3 text-center font-semibold">
+            <table className="min-w-[900px] w-full border-collapse text-[13px]">
+              <thead className="bg-gradient-to-r from-sky-600 via-blue-600 to-blue-700 text-white">
+                <tr className="border-b border-blue-700/30">
+                  <th className="w-[80px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
                     ลำดับ
                   </th>
-                  <th className="min-w-[240px] px-4 py-3 text-left font-semibold">
+                  <th className="min-w-[240px] border-r border-white/20 px-4 py-3.5 text-center text-sm font-bold">
                     ชื่อแบบสอบถาม
                   </th>
-                  <th className="w-[120px] px-4 py-3 text-center font-semibold">
+                  <th className="w-[120px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
                     ปีการศึกษา
                   </th>
-                  <th className="w-[140px] px-4 py-3 text-center font-semibold">
+                  <th className="w-[130px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
                     สถานะ
                   </th>
-                  <th className="w-[260px] px-4 py-3 text-center font-semibold">
+                  <th className="w-[240px] px-3 py-3.5 text-center text-sm font-bold">
                     การทำงาน
                   </th>
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {filteredItems.length === 0 ? (
                   <tr>
                     <td className="px-4 py-8 text-center text-slate-500" colSpan={5}>
@@ -756,12 +801,12 @@ export default function AdminSurveysPage() {
                   </tr>
                 ) : (
                   paginatedItems.map((d, idx) => (
-                    <tr key={d.id} className="transition hover:bg-slate-50">
-                      <td className="px-4 py-3 text-center text-slate-500">
+                    <tr key={d.id} className="border-b border-sky-100 transition last:border-b-0 hover:bg-sky-50/50">
+                      <td className="border-r border-sky-100 px-3 py-3.5 text-center text-slate-500">
                         {startItem + idx}
                       </td>
 
-                      <td className="px-4 py-3 font-medium text-slate-900">
+                      <td className="border-r border-sky-100 px-4 py-3.5 font-normal text-slate-900">
                         {d.title}
                         {d.description && (
                           <div className="mt-1 max-w-sm truncate text-xs font-normal text-slate-500">
@@ -770,24 +815,29 @@ export default function AdminSurveysPage() {
                         )}
                       </td>
 
-                      <td className="px-4 py-3 text-center text-slate-700">
+                      <td className="border-r border-sky-100 px-3 py-3.5 text-center text-slate-700">
                         {d.year_be}
                       </td>
 
-                      <td className="px-4 py-3 text-center">
+                      <td className="border-r border-sky-100 px-3 py-3.5 text-center">
                         <StatusBadge active={d.is_active} />
                       </td>
 
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-3 py-3.5 text-center">
                         <div className="flex items-center justify-center gap-2">
                           <ToggleSwitch
                             checked={d.is_active}
                             onChange={() => toggleActive(d)}
-                            disabled={busy}
+                            disabled={
+                              busy ||
+                              (!d.is_active && d.year_be < getCurrentYearBe())
+                            }
                             title={
                               d.is_active
                                 ? "คลิกเพื่อปิดใช้งานแบบสอบถาม"
-                                : "คลิกเพื่อเปิดใช้งานแบบสอบถาม"
+                                : d.year_be < getCurrentYearBe()
+                                  ? `ไม่สามารถเปิดแบบสอบถามย้อนหลังได้ (พ.ศ. ปัจจุบัน ${getCurrentYearBe()})`
+                                  : "คลิกเพื่อเปิดใช้งานแบบสอบถาม"
                             }
                           />
 
@@ -796,7 +846,7 @@ export default function AdminSurveysPage() {
                           <button
                             type="button"
                             onClick={() => openEdit(d)}
-                            className="rounded-xl border border-amber-500 bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-amber-600 hover:bg-amber-600 disabled:opacity-50"
+                            className="rounded-lg border border-amber-400 bg-gradient-to-b from-amber-400 to-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-amber-500 hover:to-amber-600 disabled:opacity-50"
                             disabled={busy}
                           >
                             แก้ไข
@@ -805,7 +855,7 @@ export default function AdminSurveysPage() {
                           <button
                             type="button"
                             onClick={() => deleteSurvey(d)}
-                            className="rounded-xl border border-red-500 bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-red-600 hover:bg-red-600 disabled:opacity-50"
+                            className="rounded-lg border border-red-500 bg-gradient-to-b from-red-500 to-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-red-600 hover:to-red-700 disabled:opacity-50"
                             disabled={busy}
                           >
                             ลบ
@@ -819,24 +869,24 @@ export default function AdminSurveysPage() {
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex justify-end border-t border-sky-100 bg-sky-50/30 px-4 py-3">
             <div className="flex items-center gap-2 sm:ml-auto">
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={safeCurrentPage <= 1}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
               >
                 ย้อนกลับ
               </button>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
                 หน้า {safeCurrentPage} / {totalPages}
               </div>
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 disabled={safeCurrentPage >= totalPages}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
               >
                 ถัดไป
               </button>
@@ -863,7 +913,9 @@ export default function AdminSurveysPage() {
                   {mode === "create" ? "เพิ่มแบบสอบถาม" : "แก้ไขแบบสอบถาม"}
                 </h3>
                 <p className="mt-1 text-sm text-sky-100/90">
-                  กรอกชื่อแบบสอบถาม ปีการศึกษา และรายละเอียดเพิ่มเติมให้ครบถ้วน
+                  {mode === "create"
+                    ? "เลือกปีการศึกษา ระบบจะสร้างชื่อเริ่มต้นให้และสามารถแก้ไขได้"
+                    : "แก้ไขชื่อแบบสอบถาม ปีการศึกษา และรายละเอียดเพิ่มเติม"}
                 </p>
               </div>
 
@@ -876,10 +928,26 @@ export default function AdminSurveysPage() {
                     <input
                       type="number"
                       value={yearBe}
-                      onChange={(e) => setYearBe(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) => {
+                        const nextYearBe = parseInt(e.target.value, 10) || 0;
+                        setYearBe(nextYearBe);
+                        if (mode === "create") {
+                          setTitle(
+                            nextYearBe >= 2500 ? buildSurveyTitle(nextYearBe) : "",
+                          );
+                        }
+                      }}
                       className={inputClass}
                       placeholder="เช่น 2568"
+                      min={2500}
+                      step={1}
+                      autoFocus
                     />
+                    {mode === "create" && (
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        ค่าเริ่มต้นเป็นปีถัดจากปีการศึกษาล่าสุดในระบบ
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -891,7 +959,6 @@ export default function AdminSurveysPage() {
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       className={inputClass}
-                      autoFocus
                     />
                   </div>
 

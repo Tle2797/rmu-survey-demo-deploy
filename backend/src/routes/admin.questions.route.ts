@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import {
+  createCentralQuestions,
   createCentralQuestion,
   deleteCentralQuestion,
   listCentralQuestions,
@@ -21,6 +22,19 @@ export const adminCentralQuestionsRoute = new Elysia({
       text: t.String(),
       type: t.Union([t.Literal("rating"), t.Literal("text")]),
       display_order: t.Optional(t.Numeric()),
+    }),
+  })
+  .post("/bulk", createCentralQuestions, {
+    body: t.Object({
+      survey_id: t.Numeric(),
+      questions: t.Array(
+        t.Object({
+          text: t.String(),
+          type: t.Union([t.Literal("rating"), t.Literal("text")]),
+          display_order: t.Optional(t.Numeric()),
+        }),
+        { minItems: 1, maxItems: 50 },
+      ),
     }),
   })
   .put("/:id", updateCentralQuestion, {

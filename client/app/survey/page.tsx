@@ -15,6 +15,9 @@ import DepartmentBrowser from "./department-browser";
 type Department = {
   id: number;
   name: string;
+  department_group_id: number;
+  department_group_name: string;
+  department_group_display_order: number;
 };
 
 type DepartmentResponse = {
@@ -41,9 +44,9 @@ function getErrorMessage(error: unknown, fallback: string) {
 export default async function SurveyIndexPage({
   searchParams,
 }: {
-  searchParams?: Promise<SurveySearchParams> | SurveySearchParams;
+  searchParams?: Promise<SurveySearchParams>;
 }) {
-  const sp = await Promise.resolve(searchParams ?? {});
+  const sp = (await searchParams) ?? {};
   const rawDepartmentId =
     pickFirstParam(sp.dept) ?? pickFirstParam(sp.departmentId);
   const departmentId = Number(rawDepartmentId);

@@ -2,17 +2,12 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Sidebar from "../components/sidebar/sidebar";
+import Sidebar, { type SidebarUser } from "../components/sidebar/sidebar";
 import { apiGet } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 type MeRes = {
-  user: {
-    id: number;
-    username: string;
-    role: "admin" | "exec" | "dept_head" | "staff";
-    departmentId: number | null;
-  };
+  user: SidebarUser;
 };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -64,7 +59,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <Sidebar role="admin" />
+      <Sidebar role="admin" user={me} />
       <main className="flex-1 h-full overflow-y-auto">{children}</main>
     </div>
   );

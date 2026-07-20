@@ -7,9 +7,17 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
+import OverviewCard from "@/app/components/overview-card";
 import { apiGet } from "@/lib/api";
+import {
+  buildExcelXmlWorkbook,
+  downloadExcelFile,
+  excelCell,
+  sanitizeExcelFileName,
+  spacerRow,
+  type ExcelXmlRow,
+} from "@/lib/excel-xml";
 import { useReactToPrint } from "react-to-print";
-import * as XLSX from "xlsx";
 import {
   BadgeCheck,
   BarChart3,
@@ -58,6 +66,9 @@ type ReportData = {
   departments: {
     department_id: number;
     department_name: string;
+    department_group_id: number;
+    department_group_name: string;
+    department_group_display_order: number;
     total_responses: number;
     student_count: number;
     staff_count: number;
@@ -75,6 +86,9 @@ type ReportData = {
   }[];
   comments: {
     department_name: string;
+    department_group_id: number;
+    department_group_name: string;
+    department_group_display_order: number;
     answer_id: number;
     question_id: number;
     question_text: string;
@@ -103,6 +117,11 @@ type ReportData = {
       value: RespondentGroup;
       count: number;
     }[];
+    department_groups: {
+      id: number;
+      name: string;
+      display_order: number;
+    }[];
     selected: {
       survey_id: number;
       year_be: number | null;
@@ -111,12 +130,14 @@ type ReportData = {
       week_start: string | null;
       date: string | null;
       respondent_group: RespondentGroup | null;
+      department_group_id: number | null;
     };
   };
 };
 
 type ReportFilters = {
   surveyId: string;
+  departmentGroupId: string;
   month: string;
   weekStart: string;
   date: string;
@@ -391,18 +412,348 @@ function getBand(score: number | null | undefined, bands: RatingBand[]) {
   };
 }
 
-function buildNoDataMessage(periodLabel: string, respondentGroupLabel: string) {
-  return `ขณะนี้ไม่มีข้อมูลในช่วงรายงาน (${periodLabel}) สำหรับกลุ่มผู้ประเมิน ${respondentGroupLabel}`;
+function groupReportDepartments(departments: ReportData["departments"]) {
+  const groupsById = new Map<
+    number,
+    {
+      id: number;
+      name: string;
+      displayOrder: number;
+      departments: ReportData["departments"];
+    }
+  >();
+
+  for (const department of departments) {
+    const groupId = Number(department.department_group_id);
+    const group = groupsById.get(groupId);
+
+    if (group) {
+      group.departments.push(department);
+    } else {
+      groupsById.set(groupId, {
+        id: groupId,
+        name: department.department_group_name,
+        displayOrder: Number(department.department_group_display_order),
+        departments: [department],
+      });
+    }
+  }
+
+  return Array.from(groupsById.values()).sort(
+    (a, b) => a.displayOrder - b.displayOrder || a.id - b.id,
+  );
+}
+
+function groupReportComments(comments: ReportData["comments"]) {
+  const groupsById = new Map<
+    number,
+    {
+      id: number;
+      name: string;
+      displayOrder: number;
+      comments: ReportData["comments"];
+    }
+  >();
+
+  for (const comment of comments) {
+    const groupId = Number(comment.department_group_id);
+    const group = groupsById.get(groupId);
+
+    if (group) {
+      group.comments.push(comment);
+    } else {
+      groupsById.set(groupId, {
+        id: groupId,
+        name: comment.department_group_name,
+        displayOrder: Number(comment.department_group_display_order),
+        comments: [comment],
+      });
+    }
+  }
+
+  return Array.from(groupsById.values()).sort(
+    (a, b) => a.displayOrder - b.displayOrder || a.id - b.id,
+  );
+}
+
+function buildExecutiveReportExcelXml({
+  data,
+  reportDepartments,
+  surveyTitle,
+  selectedPrintPeriodLabel,
+  overallBandLabel,
+  summaryRespondentGroupLabel,
+  selectedDepartmentGroupLabel,
+}: {
+  data: ReportData;
+  reportDepartments: ReportData["departments"];
+  surveyTitle: string;
+  selectedPrintPeriodLabel: string;
+  overallBandLabel: string;
+  summaryRespondentGroupLabel: string;
+  selectedDepartmentGroupLabel: string;
+}) {
+  const reportDepartmentGroups = groupReportDepartments(reportDepartments);
+  const reportCommentGroups = groupReportComments(data.comments);
+  const summaryRows: ExcelXmlRow[] = [
+    {
+      height: 28,
+      cells: [
+        excelCell("รายงานผลการประเมินของผู้บริหาร", "Title", {
+          mergeAcross: 3,
+        }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("แบบประเมิน", "MetaLabel"),
+        excelCell(surveyTitle, "MetaValue", { mergeAcross: 2 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("ช่วงรายงาน", "MetaLabel"),
+        excelCell(selectedPrintPeriodLabel, "MetaValue", { mergeAcross: 2 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("กลุ่มหน่วยงาน", "MetaLabel"),
+        excelCell(selectedDepartmentGroupLabel, "MetaValue", {
+          mergeAcross: 2,
+        }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("คะแนนเฉลี่ยรวม", "MetaLabel"),
+        excelCell(formatScore(data.summary.avg_rating), "MetaValue", {
+          mergeAcross: 2,
+        }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("ผลการประเมิน", "MetaLabel"),
+        excelCell(overallBandLabel, "MetaValue", { mergeAcross: 2 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("หน่วยงานทั้งหมด", "MetaLabel"),
+        excelCell(data.summary.total_departments, "MetaValueLeft", {
+          type: "Number",
+          mergeAcross: 2,
+        }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("กลุ่มผู้ทำแบบประเมิน", "MetaLabel"),
+        excelCell(summaryRespondentGroupLabel, "MetaValue", { mergeAcross: 2 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("จำนวนผู้ตอบแบบประเมิน", "MetaLabel"),
+        excelCell(data.summary.total_responses, "MetaValueLeft", {
+          type: "Number",
+          mergeAcross: 2,
+        }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("ออกรายงาน", "MetaLabel"),
+        excelCell(formatThaiFullDate(new Date()), "MetaValue", {
+          mergeAcross: 2,
+        }),
+      ],
+    },
+  ];
+
+  const departmentRows: ExcelXmlRow[] = [
+    {
+      height: 28,
+      cells: [
+        excelCell("รายงานหน่วยงาน", "Title", {
+          mergeAcross: 3,
+        }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("แบบประเมิน", "MetaLabel"),
+        excelCell(surveyTitle, "MetaValue", { mergeAcross: 2 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("ช่วงรายงาน", "MetaLabel"),
+        excelCell(selectedPrintPeriodLabel, "MetaValue", { mergeAcross: 2 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("กลุ่มหน่วยงาน", "MetaLabel"),
+        excelCell(selectedDepartmentGroupLabel, "MetaValue", {
+          mergeAcross: 2,
+        }),
+      ],
+    },
+    spacerRow(4),
+    ...reportDepartmentGroups.flatMap((group, groupIndex) => [
+      {
+        height: 22,
+        autoFitHeight: true,
+        cells: [excelCell(group.name, "Default", { mergeAcross: 3 })],
+      },
+      {
+        autoFitHeight: true,
+        cells: [
+          excelCell("ลำดับ", "Header"),
+          excelCell("หน่วยงาน", "Header"),
+          excelCell("คะแนนเฉลี่ย", "Header"),
+          excelCell("ผลการประเมิน", "Header"),
+        ],
+      },
+      ...group.departments.map((item, index) => ({
+        autoFitHeight: true,
+        cells: [
+          excelCell(index + 1, "CenterCell", { type: "Number" }),
+          excelCell(item.department_name, "Cell"),
+          excelCell(formatScore(item.avg_rating), "CenterCell"),
+          excelCell(
+            getBand(item.avg_rating, data.rating_bands).label,
+            "CenterCell",
+          ),
+        ],
+      })),
+      ...(groupIndex < reportDepartmentGroups.length - 1
+        ? [spacerRow(4, 8)]
+        : []),
+    ]),
+  ];
+
+  const commentRows: ExcelXmlRow[] = [
+    {
+      height: 28,
+      cells: [
+        excelCell("รายงานความคิดเห็น", "Title", {
+          mergeAcross: 5,
+        }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("แบบประเมิน", "MetaLabel"),
+        excelCell(surveyTitle, "MetaValue", { mergeAcross: 4 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("ช่วงรายงาน", "MetaLabel"),
+        excelCell(selectedPrintPeriodLabel, "MetaValue", { mergeAcross: 4 }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("กลุ่มหน่วยงาน", "MetaLabel"),
+        excelCell(selectedDepartmentGroupLabel, "MetaValue", {
+          mergeAcross: 4,
+        }),
+      ],
+    },
+    {
+      cells: [
+        excelCell("กลุ่มผู้ทำแบบประเมิน", "MetaLabel"),
+        excelCell(summaryRespondentGroupLabel, "MetaValue", {
+          mergeAcross: 4,
+        }),
+      ],
+    },
+    spacerRow(6),
+    {
+      cells: [
+        excelCell("ความคิดเห็นจากผู้ประเมิน", "SectionTitle", {
+          mergeAcross: 5,
+        }),
+      ],
+    },
+    ...reportCommentGroups.flatMap((group, groupIndex) => [
+      {
+        height: 22,
+        autoFitHeight: true,
+        cells: [excelCell(group.name, "Default", { mergeAcross: 5 })],
+      },
+      {
+        autoFitHeight: true,
+        cells: [
+          excelCell("ลำดับ", "Header"),
+          excelCell("หน่วยงาน", "Header"),
+          excelCell("กลุ่มผู้ประเมิน", "Header"),
+          excelCell("คำถาม", "Header"),
+          excelCell("ความคิดเห็น", "Header"),
+          excelCell("วันที่", "Header"),
+        ],
+      },
+      ...group.comments.map((commentItem, index) => ({
+        autoFitHeight: true,
+        cells: [
+          excelCell(index + 1, "CenterCell", { type: "Number" }),
+          excelCell(commentItem.department_name, "Cell"),
+          excelCell(
+            formatRespondentGroupLabel(commentItem.respondent_group),
+            "CenterCell",
+          ),
+          excelCell(commentItem.question_text, "Cell"),
+          excelCell(commentItem.comment, "Cell"),
+          excelCell(formatDateTime(commentItem.submitted_at), "CenterCell"),
+        ],
+      })),
+      ...(groupIndex < reportCommentGroups.length - 1
+        ? [spacerRow(6, 8)]
+        : []),
+    ]),
+  ];
+
+  return buildExcelXmlWorkbook({
+    documentTitle: "รายงานผลการประเมินของผู้บริหาร",
+    sheets: [
+      {
+        name: "สรุป",
+        columns: [150, 420, 150, 180],
+        rows: summaryRows,
+      },
+      {
+        name: "หน่วยงาน",
+        columns: [70, 390, 120, 180],
+        rows: departmentRows,
+      },
+      {
+        name: "ความคิดเห็น",
+        columns: [70, 220, 140, 360, 430, 140],
+        rows: commentRows,
+      },
+    ],
+  });
+}
+
+function buildNoDataMessage(
+  periodLabel: string,
+  departmentGroupLabel: string,
+  respondentGroupLabel: string,
+) {
+  return `ขณะนี้ไม่มีข้อมูลในช่วงรายงาน (${periodLabel}) สำหรับกลุ่มหน่วยงาน ${departmentGroupLabel} และกลุ่มผู้ประเมิน ${respondentGroupLabel}`;
 }
 
 function StatCard({
-  icon: Icon,
+  icon,
   label,
   value,
   sub,
   cardClass = "border-slate-200/80 bg-white/95",
   iconClass = THEME.primary,
-  valueClass = "text-3xl tabular-nums",
 }: {
   icon: ComponentType<{ className?: string }>;
   label: string;
@@ -413,25 +764,14 @@ function StatCard({
   valueClass?: string;
 }) {
   return (
-    <div className={`rounded-[24px] border p-4 shadow-[0_14px_30px_rgba(37,99,235,0.07)] ${cardClass}`}>
-      <div className="flex items-start gap-3">
-        <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${iconClass} text-white shadow-[0_10px_22px_rgba(15,23,42,0.12)] ring-1 ring-white/30`}
-          aria-hidden="true"
-        >
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase text-slate-500">
-            {label}
-          </div>
-          <div className={`mt-1 break-words font-black text-slate-900 ${valueClass}`}>
-            {value}
-          </div>
-          {sub ? <div className="mt-1 text-xs leading-5 text-slate-500">{sub}</div> : null}
-        </div>
-      </div>
-    </div>
+    <OverviewCard
+      icon={icon}
+      title={label}
+      value={value}
+      sub={sub}
+      cardClass={cardClass}
+      iconClass={iconClass}
+    />
   );
 }
 
@@ -468,6 +808,7 @@ export default function ExecReportsPage() {
   const [error, setError] = useState("");
   const [reportFilters, setReportFilters] = useState<ReportFilters>({
     surveyId: "",
+    departmentGroupId: "",
     month: "",
     weekStart: "",
     date: "",
@@ -485,6 +826,9 @@ export default function ExecReportsPage() {
 
         const params = new URLSearchParams();
         if (reportFilters.surveyId) params.set("surveyId", reportFilters.surveyId);
+        if (reportFilters.departmentGroupId) {
+          params.set("departmentGroupId", reportFilters.departmentGroupId);
+        }
         if (reportFilters.month) params.set("month", reportFilters.month);
         if (reportFilters.weekStart) params.set("weekStart", reportFilters.weekStart);
         if (reportFilters.date) params.set("date", reportFilters.date);
@@ -539,6 +883,17 @@ export default function ExecReportsPage() {
       ? null
       : reportFilters.respondentGroup);
   const selectedRespondentGroupLabel = formatRespondentGroupLabel(selectedGroup);
+  const departmentGroupOptions = data?.filters?.department_groups ?? [];
+  const selectedDepartmentGroupId =
+    reportFilters.departmentGroupId ||
+    (data?.filters?.selected?.department_group_id
+      ? String(data.filters.selected.department_group_id)
+      : "");
+  const selectedDepartmentGroupLabel = selectedDepartmentGroupId
+    ? departmentGroupOptions.find(
+        (group) => String(group.id) === selectedDepartmentGroupId,
+      )?.name ?? `กลุ่ม #${selectedDepartmentGroupId}`
+    : "ทุกกลุ่มหน่วยงาน";
   const summaryRespondentGroupLabel = selectedGroup
     ? selectedRespondentGroupLabel
     : RESPONDENT_GROUP_OPTIONS.filter((option) => option.value !== "all")
@@ -547,6 +902,7 @@ export default function ExecReportsPage() {
   const hasNoDataForSelection = Boolean(data && data.summary.total_responses === 0);
   const noDataMessage = buildNoDataMessage(
     selectedPeriodLabel,
+    selectedDepartmentGroupLabel,
     selectedRespondentGroupLabel,
   );
   const visibleGroupSummaries = RESPONDENT_GROUP_SUMMARIES.filter((group) =>
@@ -628,6 +984,8 @@ export default function ExecReportsPage() {
     })),
   ];
   const reportDepartments = data?.departments ?? [];
+  const reportDepartmentGroups = groupReportDepartments(reportDepartments);
+  const reportCommentGroups = groupReportComments(data?.comments ?? []);
 
   const printReport = useReactToPrint({
     contentRef: printRef,
@@ -637,66 +995,20 @@ export default function ExecReportsPage() {
   const exportExcel = () => {
     if (!data) return;
 
-    const summaryRows = [
-      ["รายงานผลการประเมินของผู้บริหาร"],
-      ["แบบประเมิน", surveyTitle],
-      ["ช่วงรายงาน", selectedPrintPeriodLabel],
-      ["คะแนนเฉลี่ยรวม", formatScore(data.summary.avg_rating)],
-      ["ผลการประเมิน", overallBand.label],
-      ["หน่วยงานทั้งหมด", data.summary.total_departments],
-      ["กลุ่มผู้ทำแบบประเมิน", summaryRespondentGroupLabel],
-      ["จำนวนผู้ตอบแบบประเมิน", data.summary.total_responses],
-      ["ออกรายงาน", formatThaiFullDate(new Date())],
-    ];
-
-    const departmentRows = [
-      [
-        "ลำดับ",
-        "หน่วยงาน",
-        "คะแนนเฉลี่ย",
-        "ผลการประเมิน",
-      ],
-      ...reportDepartments.map((item, index) => [
-        index + 1,
-        item.department_name,
-        formatScore(item.avg_rating),
-        getBand(item.avg_rating, data.rating_bands).label,
-      ]),
-    ];
-
-
-    const commentRows = [
-      ["ลำดับ", "หน่วยงาน", "กลุ่มผู้ประเมิน", "คำถาม", "ความคิดเห็น", "วันที่"],
-      ...data.comments.map((commentItem, index) => [
-        index + 1,
-        commentItem.department_name,
-        formatRespondentGroupLabel(commentItem.respondent_group),
-        commentItem.question_text,
-        commentItem.comment,
-        formatDateTime(commentItem.submitted_at),
-      ]),
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(
-      workbook,
-      XLSX.utils.aoa_to_sheet(summaryRows),
-      "สรุป",
+    const excelContent = buildExecutiveReportExcelXml({
+      data,
+      reportDepartments,
+      surveyTitle,
+      selectedPrintPeriodLabel,
+      overallBandLabel: overallBand.label,
+      summaryRespondentGroupLabel,
+      selectedDepartmentGroupLabel,
+    });
+    const fileName = sanitizeExcelFileName(
+      `รายงานผลการประเมินของผู้บริหาร_${data.survey?.year_be ?? "latest"}.xls`,
     );
-    XLSX.utils.book_append_sheet(
-      workbook,
-      XLSX.utils.aoa_to_sheet(departmentRows),
-      "หน่วยงาน",
-    );
-    XLSX.utils.book_append_sheet(
-      workbook,
-      XLSX.utils.aoa_to_sheet(commentRows),
-      "ความคิดเห็น",
-    );
-    XLSX.writeFile(
-      workbook,
-      `รายงานผลการประเมินของผู้บริหาร_${data.survey?.year_be ?? "latest"}.xlsx`,
-    );
+
+    downloadExcelFile(fileName, excelContent);
   };
 
   if (loading && !data) {
@@ -816,7 +1128,7 @@ export default function ExecReportsPage() {
                   <div>
                     <div className="text-lg font-bold text-slate-900">ตัวกรองรายงาน</div>
                     <div className="mt-1 text-sm text-slate-500">
-                      เลือกข้อมูลจากแบบประเมิน เดือน สัปดาห์ วัน และกลุ่มผู้ทำแบบประเมิน
+                      เลือกข้อมูลจากแบบประเมิน กลุ่มหน่วยงาน เดือน สัปดาห์ วัน และกลุ่มผู้ทำแบบประเมิน
                     </div>
                   </div>
                 </div>
@@ -826,6 +1138,7 @@ export default function ExecReportsPage() {
                   onClick={() =>
                     setReportFilters({
                       surveyId: "",
+                      departmentGroupId: "",
                       month: "",
                       weekStart: "",
                       date: "",
@@ -939,6 +1252,27 @@ export default function ExecReportsPage() {
                   </select>
                 </label>
 
+                <label className="text-sm font-semibold text-slate-700">
+                  เลือกกลุ่มหน่วยงาน
+                  <select
+                    value={selectedDepartmentGroupId}
+                    onChange={(event) =>
+                      setReportFilters((current) => ({
+                        ...current,
+                        departmentGroupId: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-sm font-medium text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  >
+                    <option value="">ทุกกลุ่มหน่วยงาน</option>
+                    {departmentGroupOptions.map((group) => (
+                      <option key={group.id} value={String(group.id)}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 <label className="text-sm font-semibold text-slate-700 xl:col-span-2">
                   กลุ่มผู้ทำแบบประเมิน
                   <select
@@ -964,6 +1298,9 @@ export default function ExecReportsPage() {
                   <CalendarDays className="h-4 w-4 text-slate-400" />
                   <span>ช่วงรายงาน: {selectedPeriodLabel}</span>
                   <span className="text-slate-300">/</span>
+                  <Building2 className="h-4 w-4 text-slate-400" />
+                  <span>กลุ่มหน่วยงาน: {selectedDepartmentGroupLabel}</span>
+                  <span className="text-slate-300">/</span>
                   <span>กลุ่มผู้ทำแบบประเมิน: {selectedRespondentGroupLabel}</span>
                 </div>
 
@@ -971,7 +1308,7 @@ export default function ExecReportsPage() {
                   <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                     <div className="font-semibold">{noDataMessage}</div>
                     <div className="mt-1 text-amber-700">
-                      โปรดตรวจสอบช่วงเวลาและกลุ่มผู้ประเมินที่เลือกอีกครั้ง
+                      โปรดตรวจสอบกลุ่มหน่วยงาน ช่วงเวลา และกลุ่มผู้ประเมินที่เลือกอีกครั้ง
                     </div>
                   </div>
                 ) : null}
@@ -1005,7 +1342,7 @@ export default function ExecReportsPage() {
               <div ref={printRef} className="report-print-page bg-white">
                 <style>{`
                   @media print {
-                    @page { margin: 0; size: A4; }
+                    @page { margin: 12mm 10mm 10mm; size: A4; }
                     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                     .report-print-page {
                       padding: 0 !important;
@@ -1033,6 +1370,10 @@ export default function ExecReportsPage() {
                       page-break-after: avoid;
                       break-after: avoid-page;
                     }
+                    .report-group-title {
+                      page-break-after: avoid;
+                      break-after: avoid-page;
+                    }
                     .report-footer {
                       margin-top: 8px !important;
                       padding-top: 6px !important;
@@ -1049,6 +1390,10 @@ export default function ExecReportsPage() {
                   .report-section-title {
                     font-size: 13px; font-weight: 700; color: #1e293b;
                     margin-top: 16px; margin-bottom: 4px;
+                  }
+                  .report-group-title {
+                    font-size: 13px; font-weight: 400; color: #000000;
+                    margin-top: 10px; margin-bottom: 4px;
                   }
                 `}</style>
 
@@ -1140,7 +1485,11 @@ export default function ExecReportsPage() {
                       </td>
                     </tr>
                     <tr>
-                      <td colSpan={2}>
+                      <td>
+                        <span style={{ fontWeight: 600 }}>กลุ่มหน่วยงาน :</span>{" "}
+                        {selectedDepartmentGroupLabel}
+                      </td>
+                      <td>
                         <span style={{ fontWeight: 600 }}>จำนวนผู้ตอบแบบประเมิน :</span>{" "}
                         {formatCount(data.summary.total_responses)} คน
                       </td>
@@ -1151,17 +1500,17 @@ export default function ExecReportsPage() {
                 <div className="report-section-title">
                   ผลการประเมินจำแนกรายหน่วยงาน
                 </div>
-                <table className="report-tbl">
-                  <thead>
-                    <tr>
-                      <th style={{ width: "50px", textAlign: "center" }}>ลำดับ</th>
-                      <th style={{ textAlign: "center" }}>หน่วยงาน</th>
-                      <th style={{ width: "90px", textAlign: "center" }}>ค่าเฉลี่ย</th>
-                      <th style={{ width: "120px", textAlign: "center" }}>ผลการประเมิน</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reportDepartments.length === 0 ? (
+                {reportDepartments.length === 0 ? (
+                  <table className="report-tbl">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "50px", textAlign: "center" }}>ลำดับ</th>
+                        <th style={{ textAlign: "center" }}>หน่วยงาน</th>
+                        <th style={{ width: "90px", textAlign: "center" }}>ค่าเฉลี่ย</th>
+                        <th style={{ width: "120px", textAlign: "center" }}>ผลการประเมิน</th>
+                      </tr>
+                    </thead>
+                    <tbody>
                       <tr>
                         <td
                           colSpan={4}
@@ -1174,39 +1523,59 @@ export default function ExecReportsPage() {
                           ยังไม่มีข้อมูลหน่วยงานในรายงานนี้
                         </td>
                       </tr>
-                    ) : (
-                      reportDepartments.map((department, index) => (
-                        <tr key={department.department_id}>
-                          <td style={{ textAlign: "center" }}>{index + 1}</td>
-                          <td>{department.department_name}</td>
-                          <td style={{ textAlign: "center", fontWeight: 600 }}>
-                            {formatScore(department.avg_rating)}
-                          </td>
-                          <td style={{ textAlign: "center" }}>
-                            {getBand(department.avg_rating, data.rating_bands).label}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                    </tbody>
+                  </table>
+                ) : (
+                  reportDepartmentGroups.map((group) => (
+                    <div
+                      key={`report-group-${group.id}`}
+                      className="report-department-group"
+                    >
+                      <div className="report-group-title">{group.name}</div>
+                      <table className="report-tbl">
+                        <thead>
+                          <tr>
+                            <th style={{ width: "50px", textAlign: "center" }}>ลำดับ</th>
+                            <th style={{ textAlign: "center" }}>หน่วยงาน</th>
+                            <th style={{ width: "90px", textAlign: "center" }}>ค่าเฉลี่ย</th>
+                            <th style={{ width: "120px", textAlign: "center" }}>ผลการประเมิน</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.departments.map((department, index) => (
+                            <tr key={department.department_id}>
+                              <td style={{ textAlign: "center" }}>{index + 1}</td>
+                              <td>{department.department_name}</td>
+                              <td style={{ textAlign: "center", fontWeight: 600 }}>
+                                {formatScore(department.avg_rating)}
+                              </td>
+                              <td style={{ textAlign: "center" }}>
+                                {getBand(department.avg_rating, data.rating_bands).label}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))
+                )}
 
                 <div className="report-section-title">
                   ความคิดเห็นจากผู้ประเมิน
                 </div>
-                <table className="report-tbl">
-                  <thead>
-                    <tr>
-                      <th style={{ width: "50px", textAlign: "center" }}>ลำดับ</th>
-                      <th style={{ width: "150px", textAlign: "center" }}>หน่วยงาน</th>
-                      <th style={{ width: "110px", textAlign: "center" }}>กลุ่มผู้ประเมิน</th>
-                      <th style={{ textAlign: "center" }}>คำถาม</th>
-                      <th style={{ textAlign: "center" }}>ความคิดเห็น</th>
-                      <th style={{ width: "130px", textAlign: "center" }}>วันที่</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.comments.length === 0 ? (
+                {data.comments.length === 0 ? (
+                  <table className="report-tbl">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "50px", textAlign: "center" }}>ลำดับ</th>
+                        <th style={{ width: "150px", textAlign: "center" }}>หน่วยงาน</th>
+                        <th style={{ width: "110px", textAlign: "center" }}>กลุ่มผู้ประเมิน</th>
+                        <th style={{ textAlign: "center" }}>คำถาม</th>
+                        <th style={{ textAlign: "center" }}>ความคิดเห็น</th>
+                        <th style={{ width: "130px", textAlign: "center" }}>วันที่</th>
+                      </tr>
+                    </thead>
+                    <tbody>
                       <tr>
                         <td
                           colSpan={6}
@@ -1221,24 +1590,48 @@ export default function ExecReportsPage() {
                             : "ยังไม่มีความคิดเห็นจากผู้ประเมินในช่วงรายงานนี้"}
                         </td>
                       </tr>
-                    ) : (
-                      data.comments.map((commentItem, index) => (
-                        <tr key={commentItem.answer_id}>
-                          <td style={{ textAlign: "center" }}>{index + 1}</td>
-                          <td>{commentItem.department_name}</td>
-                          <td style={{ textAlign: "center" }}>
-                            {formatRespondentGroupLabel(commentItem.respondent_group)}
-                          </td>
-                          <td>{commentItem.question_text}</td>
-                          <td>{commentItem.comment}</td>
-                          <td style={{ textAlign: "center" }}>
-                            {formatDateTime(commentItem.submitted_at)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                    </tbody>
+                  </table>
+                ) : (
+                  reportCommentGroups.map((group) => (
+                    <div
+                      key={`comment-group-${group.id}`}
+                      className="report-comment-group"
+                    >
+                      <div className="report-group-title">{group.name}</div>
+                      <table className="report-tbl">
+                        <thead>
+                          <tr>
+                            <th style={{ width: "50px", textAlign: "center" }}>ลำดับ</th>
+                            <th style={{ width: "150px", textAlign: "center" }}>หน่วยงาน</th>
+                            <th style={{ width: "110px", textAlign: "center" }}>กลุ่มผู้ประเมิน</th>
+                            <th style={{ textAlign: "center" }}>คำถาม</th>
+                            <th style={{ textAlign: "center" }}>ความคิดเห็น</th>
+                            <th style={{ width: "130px", textAlign: "center" }}>วันที่</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.comments.map((commentItem, index) => (
+                            <tr key={commentItem.answer_id}>
+                              <td style={{ textAlign: "center" }}>{index + 1}</td>
+                              <td>{commentItem.department_name}</td>
+                              <td style={{ textAlign: "center" }}>
+                                {formatRespondentGroupLabel(
+                                  commentItem.respondent_group,
+                                )}
+                              </td>
+                              <td>{commentItem.question_text}</td>
+                              <td>{commentItem.comment}</td>
+                              <td style={{ textAlign: "center" }}>
+                                {formatDateTime(commentItem.submitted_at)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))
+                )}
 
 
                 <div

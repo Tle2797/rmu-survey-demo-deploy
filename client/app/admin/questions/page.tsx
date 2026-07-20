@@ -3,11 +3,20 @@
 import React, {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type SVGProps,
 } from "react";
-import { CircleCheck, CircleX, Info, ListChecks, X } from "lucide-react";
+import {
+  CircleCheck,
+  CircleX,
+  Info,
+  ListChecks,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import Swal from "sweetalert2";
 import {
   apiDeleteWithMeta,
@@ -51,6 +60,12 @@ type QuestionDeleteResponse = {
   affected_responses?: number;
   deleted_responses?: number;
   recalculated?: boolean;
+};
+
+type QuestionDraft = {
+  id: number;
+  text: string;
+  type: QuestionType;
 };
 
 type ModalMode = "create" | "edit";
@@ -124,6 +139,14 @@ function getDefaultDisplayOrder(items: QuestionRow[]) {
 function normalizeDisplayOrderInput(value: string) {
   const digits = value.replace(/\D/g, "");
   return digits.replace(/^0+/, "");
+}
+
+function createQuestionDraft(id: number): QuestionDraft {
+  return {
+    id,
+    text: "",
+    type: "rating",
+  };
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -316,6 +339,10 @@ export default function AdminCentralQuestionsPage() {
   const [text, setText] = useState("");
   const [qType, setQType] = useState<QuestionType>("rating");
   const [displayOrder, setDisplayOrder] = useState("1");
+  const [questionDrafts, setQuestionDrafts] = useState<QuestionDraft[]>([
+    createQuestionDraft(1),
+  ]);
+  const nextDraftId = useRef(2);
 
   const load = async () => {
     const res = await apiGet<CentralQuestionsRes>("/api/admin/questions/central");
@@ -400,13 +427,16 @@ export default function AdminCentralQuestionsPage() {
   const isQuestionTypeLocked =
     mode === "edit" &&
     Boolean(editing?.has_answers || (editing?.answer_count ?? 0) > 0);
+  const firstNewQuestionNumber = getDefaultDisplayOrder(items);
 
   const openCreate = () => {
+    const defaultDisplayOrder = getDefaultDisplayOrder(items);
     setMode("create");
     setEditing(null);
     setText("");
     setQType("rating");
-    setDisplayOrder(String(getDefaultDisplayOrder(items)));
+    setDisplayOrder(String(defaultDisplayOrder));
+    setQuestionDrafts([createQuestionDraft(nextDraftId.current++)]);
     setOpen(true);
   };
 
@@ -426,40 +456,92 @@ export default function AdminCentralQuestionsPage() {
     setText("");
     setQType("rating");
     setDisplayOrder("1");
+    setQuestionDrafts([createQuestionDraft(nextDraftId.current++)]);
+  };
+
+  const updateQuestionDraft = (
+    id: number,
+    field: "text" | "type",
+    value: string,
+  ) => {
+    setQuestionDrafts((drafts) =>
+      drafts.map((draft) =>
+        draft.id === id
+          ? {
+              ...draft,
+              [field]: value,
+            }
+          : draft,
+      ),
+    );
+  };
+
+  const addQuestionDraft = () => {
+    setQuestionDrafts((drafts) => [
+      ...drafts,
+      createQuestionDraft(nextDraftId.current++),
+    ]);
+  };
+
+  const removeQuestionDraft = (id: number) => {
+    setQuestionDrafts((drafts) => drafts.filter((draft) => draft.id !== id));
   };
 
   const save = async () => {
     try {
       setError("");
-
-      const payloadText = text.trim();
-      if (!payloadText) throw new Error("กรุณากรอกข้อความคำถาม");
       if (!currentSurveyId) {
         throw new Error("ไม่พบแบบสอบถามที่กำลังเปิดใช้งาน");
       }
-      const displayOrderValue = Number(displayOrder);
-      if (
-        !displayOrder.trim() ||
-        !Number.isInteger(displayOrderValue) ||
-        displayOrderValue < 1
-      ) {
-        throw new Error("กรุณากรอกลำดับการแสดงผลให้มากกว่า 0");
-      }
-
-      const payload = {
-        survey_id: currentSurveyId,
-        text: payloadText,
-        type: isQuestionTypeLocked && editing ? editing.type : qType,
-        display_order: displayOrderValue,
-      };
 
       setBusy(true);
       const isCreate = mode === "create";
 
       if (isCreate) {
-        await apiPost("/api/admin/questions/central", payload);
+        if (questionDrafts.length === 0) {
+          throw new Error("กรุณาเพิ่มคำถามอย่างน้อย 1 ข้อ");
+        }
+
+        const questions = questionDrafts.map((draft, index) => {
+          const payloadText = draft.text.trim();
+          const questionNumber = firstNewQuestionNumber + index;
+
+          if (!payloadText) {
+            throw new Error(`กรุณากรอกข้อความคำถามข้อที่ ${questionNumber}`);
+          }
+
+          return {
+            text: payloadText,
+            type: draft.type,
+          };
+        });
+
+        await apiPost("/api/admin/questions/central/bulk", {
+          survey_id: currentSurveyId,
+          questions,
+        });
       } else {
         if (!editing) throw new Error("ไม่พบรายการที่ต้องแก้ไข");
+
+        const payloadText = text.trim();
+        if (!payloadText) throw new Error("กรุณากรอกข้อความคำถาม");
+
+        const displayOrderValue = Number(displayOrder);
+        if (
+          !displayOrder.trim() ||
+          !Number.isInteger(displayOrderValue) ||
+          displayOrderValue < 1
+        ) {
+          throw new Error("กรุณากรอกลำดับการแสดงผลให้มากกว่า 0");
+        }
+
+        const payload = {
+          survey_id: currentSurveyId,
+          text: payloadText,
+          type: isQuestionTypeLocked ? editing.type : qType,
+          display_order: displayOrderValue,
+        };
+
         await apiPut(`/api/admin/questions/central/${editing.id}`, payload);
       }
 
@@ -468,8 +550,8 @@ export default function AdminCentralQuestionsPage() {
       await showSuccessAlert(
         isCreate ? "เพิ่มคำถามส่วนกลางสำเร็จ" : "แก้ไขคำถามส่วนกลางสำเร็จ",
         isCreate
-          ? `เพิ่มคำถาม "${payloadText}" เรียบร้อยแล้ว`
-          : `อัปเดตคำถาม "${payloadText}" เรียบร้อยแล้ว`,
+          ? `เพิ่มคำถามพร้อมกัน ${questionDrafts.length.toLocaleString("th-TH")} ข้อเรียบร้อยแล้ว`
+          : `อัปเดตคำถาม "${text.trim()}" เรียบร้อยแล้ว`,
       );
     } catch (e: unknown) {
       setError(getErrorMessage(e, "บันทึกไม่สำเร็จ"));
@@ -754,34 +836,34 @@ export default function AdminCentralQuestionsPage() {
             className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:from-sky-500 hover:to-blue-500 disabled:opacity-60"
             disabled={busy || !currentSurveyId}
           >
-            + เพิ่มคำถามส่วนกลาง
+            + เพิ่มคำถามกลาง
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_18px_50px_rgba(37,99,235,0.08)]">
+        <div className="overflow-hidden rounded-3xl border border-sky-100 bg-white/95 shadow-[0_20px_55px_rgba(37,99,235,0.10)]">
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-blue-700/20 bg-gradient-to-r from-sky-600 to-blue-600 text-white">
-                <tr>
-                  <th className="w-[90px] px-4 py-3 text-center font-semibold">
+            <table className="min-w-[860px] w-full border-collapse text-[13px]">
+              <thead className="bg-gradient-to-r from-sky-600 via-blue-600 to-blue-700 text-white">
+                <tr className="border-b border-blue-700/30">
+                  <th className="w-[70px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
                     ข้อ
                   </th>
-                  <th className="min-w-[320px] px-4 py-3 text-left font-semibold">
+                  <th className="min-w-[300px] border-r border-white/20 px-4 py-3.5 text-center text-sm font-bold">
                     ข้อความคำถาม
                   </th>
-                  <th className="w-[180px] px-4 py-3 text-center font-semibold">
+                  <th className="w-[170px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
                     รูปแบบ
                   </th>
-                  <th className="w-[140px] px-4 py-3 text-center font-semibold">
+                  <th className="w-[130px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
                     สถานะ
                   </th>
-                  <th className="w-[260px] px-4 py-3 text-center font-semibold">
+                  <th className="w-[240px] px-3 py-3.5 text-center text-sm font-bold">
                     การทำงาน
                   </th>
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {paginatedItems.length === 0 ? (
                   <tr>
                     <td className="px-4 py-8 text-center text-slate-500" colSpan={5}>
@@ -790,29 +872,29 @@ export default function AdminCentralQuestionsPage() {
                   </tr>
                 ) : (
                   paginatedItems.map((row) => (
-                    <tr key={row.id} className="transition hover:bg-slate-50">
-                      <td className="px-4 py-3 text-center text-slate-500">
+                    <tr key={row.id} className="border-b border-sky-100 transition last:border-b-0 hover:bg-sky-50/50">
+                      <td className="border-r border-sky-100 px-3 py-3.5 text-center text-slate-500">
                         {row.display_order}
                       </td>
 
-                      <td className="px-4 py-3 text-slate-900">
-                        <div className="font-medium">{row.text}</div>
+                      <td className="border-r border-sky-100 px-4 py-3.5 text-slate-900">
+                        <div className="font-normal leading-5">{row.text}</div>
                         {row.has_answers && (
-                          <div className="mt-1 text-xs text-amber-700">
+                          <div className="mt-1 text-[11px] font-medium leading-4 text-amber-700">
                             มีข้อมูลการประเมินแล้ว {row.answer_count.toLocaleString("th-TH")} รายการ จากแบบประเมิน
                           </div>
                         )}
                       </td>
 
-                      <td className="px-4 py-3 text-center">
+                      <td className="border-r border-sky-100 px-3 py-3.5 text-center">
                         <TypeBadge type={row.type} />
                       </td>
 
-                      <td className="px-4 py-3 text-center">
+                      <td className="border-r border-sky-100 px-3 py-3.5 text-center">
                         <StatusBadge active={row.status === "active"} />
                       </td>
 
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-3 py-3.5 text-center">
                         <div className="flex items-center justify-center gap-2">
                           <ToggleSwitch
                             checked={row.status === "active"}
@@ -830,7 +912,7 @@ export default function AdminCentralQuestionsPage() {
                           <button
                             type="button"
                             onClick={() => openEdit(row)}
-                            className="rounded-xl border border-amber-500 bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-amber-600 hover:bg-amber-600 disabled:opacity-50"
+                            className="rounded-lg border border-amber-400 bg-gradient-to-b from-amber-400 to-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-amber-500 hover:to-amber-600 disabled:opacity-50"
                             disabled={busy}
                           >
                             แก้ไข
@@ -839,7 +921,7 @@ export default function AdminCentralQuestionsPage() {
                           <button
                             type="button"
                             onClick={() => deleteQuestion(row)}
-                            className="rounded-xl border border-red-500 bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-red-600 hover:bg-red-600 disabled:opacity-50"
+                            className="rounded-lg border border-red-500 bg-gradient-to-b from-red-500 to-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-red-600 hover:to-red-700 disabled:opacity-50"
                             disabled={busy}
                           >
                             ลบ
@@ -853,24 +935,24 @@ export default function AdminCentralQuestionsPage() {
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex justify-end border-t border-sky-100 bg-sky-50/30 px-4 py-3">
             <div className="flex items-center gap-2 sm:ml-auto">
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={safeCurrentPage <= 1}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
               >
                 ย้อนกลับ
               </button>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
                 หน้า {safeCurrentPage} / {totalPages}
               </div>
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 disabled={safeCurrentPage >= totalPages}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
               >
                 ถัดไป
               </button>
@@ -880,8 +962,8 @@ export default function AdminCentralQuestionsPage() {
 
         {open && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
-            <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-sky-50 shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
-              <div className="relative rounded-t-3xl border-b border-white/15 bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-600 px-6 py-4 text-white">
+            <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-sky-50 shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
+              <div className="relative rounded-t-2xl border-b border-white/15 bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-600 px-5 py-3.5 text-white">
                 <button
                   type="button"
                   onClick={closeModal}
@@ -897,26 +979,128 @@ export default function AdminCentralQuestionsPage() {
                   {mode === "create" ? "เพิ่มคำถามส่วนกลาง" : "แก้ไขคำถามส่วนกลาง"}
                 </h3>
                 <p className="mt-1 text-sm text-sky-100/90">
-                  กรอกข้อความคำถาม รูปแบบคำตอบ และลำดับการแสดงผลให้ครบถ้วน
+                  {mode === "create"
+                    ? `คำถามใหม่จะเริ่มต่อจากรายการเดิมที่ข้อ ${firstNewQuestionNumber} โดยอัตโนมัติ`
+                    : "แก้ไขข้อความคำถามและรูปแบบคำตอบ"}
                 </p>
               </div>
 
-              <div className="p-6">
-                <div className="space-y-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                      ข้อความคำถาม <span className="text-red-500">*</span>
-                    </label>
-                    <textarea
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                      className={`${inputClass} min-h-[120px]`}
-                      autoFocus
-                    />
-                  </div>
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="overflow-y-auto p-4 sm:p-5">
+                  {mode === "create" ? (
+                  <div className="space-y-4">
+                    {questionDrafts.map((draft, index) => (
+                      <div
+                        key={draft.id}
+                        className="rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)]"
+                      >
+                        <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-2.5">
+                          <div className="inline-flex h-9 items-center justify-center rounded-xl bg-blue-50 px-3 text-sm font-bold text-blue-700 ring-1 ring-blue-100">
+                            ข้อ {firstNewQuestionNumber + index}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeQuestionDraft(draft.id)}
+                            disabled={busy || questionDrafts.length === 1}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label={`ลบคำถามข้อที่ ${firstNewQuestionNumber + index}`}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            ลบข้อนี้
+                          </button>
+                        </div>
 
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                          ข้อความคำถาม <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                          value={draft.text}
+                          onChange={(e) =>
+                            updateQuestionDraft(draft.id, "text", e.target.value)
+                          }
+                          className={`${inputClass} min-h-[90px] resize-y`}
+                          placeholder="กรอกข้อความคำถาม"
+                          autoFocus={index === 0}
+                        />
+
+                        <div className="mt-3">
+                          <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                            รูปแบบคำตอบ <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={draft.type}
+                            onChange={(e) =>
+                              updateQuestionDraft(draft.id, "type", e.target.value)
+                            }
+                            className={selectClass}
+                            disabled={busy}
+                          >
+                            {QUESTION_TYPE_OPTIONS.map((item) => (
+                              <option key={item.value} value={item.value}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1.5 text-xs leading-5 text-slate-500">
+                            {draft.type === "rating"
+                              ? "ผู้ประเมินเลือกคะแนนตั้งแต่ 1 ถึง 5 ดาว"
+                              : QUESTION_TYPE_OPTIONS.find(
+                                  (item) => item.value === draft.type,
+                                )?.description}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={addQuestionDraft}
+                      disabled={busy || questionDrafts.length >= 50}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/70 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      เพิ่มคำถามข้อ {firstNewQuestionNumber + questionDrafts.length}
+                    </button>
+                  </div>
+                  ) : (
+                  <div className="rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-2.5">
+                      <label className="inline-flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 ring-1 ring-blue-100">
+                        <span>ข้อ</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={displayOrder}
+                          onChange={(e) =>
+                            setDisplayOrder(
+                              normalizeDisplayOrderInput(e.target.value),
+                            )
+                          }
+                          disabled={busy}
+                          aria-label="เลขข้อ"
+                          className="h-8 w-16 rounded-lg border border-blue-200 bg-white px-2 text-center text-sm font-bold text-blue-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50"
+                        />
+                      </label>
+                      <span className="text-xs text-slate-500">
+                        แก้เลขข้อเพื่อจัดลำดับคำถามใหม่
+                      </span>
+                    </div>
+
                     <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                        ข้อความคำถาม <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        className={`${inputClass} min-h-[90px] resize-y`}
+                        placeholder="กรอกข้อความคำถาม"
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="mt-3">
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">
                         รูปแบบคำตอบ <span className="text-red-500">*</span>
                       </label>
@@ -939,43 +1123,35 @@ export default function AdminCentralQuestionsPage() {
                             ).toLocaleString(
                               "th-TH",
                             )} รายการ จึงไม่สามารถเปลี่ยนรูปแบบคำตอบได้`
-                          : QUESTION_TYPE_OPTIONS.find((item) => item.value === qType)
-                              ?.description}
+                          : qType === "rating"
+                            ? "ผู้ประเมินเลือกคะแนนตั้งแต่ 1 ถึง 5 ดาว"
+                            : QUESTION_TYPE_OPTIONS.find(
+                                (item) => item.value === qType,
+                              )?.description}
                       </p>
                     </div>
-
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                        ลำดับการแสดงผล <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={displayOrder}
-                        onChange={(e) =>
-                          setDisplayOrder(normalizeDisplayOrderInput(e.target.value))
-                        }
-                        className={inputClass}
-                      />
-                    </div>
                   </div>
+                  )}
+
+                  {error && (
+                    <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      {error}
+                    </div>
+                  )}
                 </div>
 
-                {error && (
-                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    {error}
-                  </div>
-                )}
-
-                <div className="mt-6 flex justify-end gap-2">
+                <div className="flex flex-shrink-0 justify-end gap-2 border-t border-slate-200 bg-white/95 px-4 py-3.5 sm:px-5">
                   <button
                     type="button"
                     onClick={save}
                     disabled={busy}
                     className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white transition hover:bg-blue-700 disabled:opacity-60"
                   >
-                    {busy ? "กำลังบันทึก..." : "บันทึกข้อมูล"}
+                    {busy
+                      ? "กำลังบันทึก..."
+                      : mode === "create"
+                        ? `บันทึก ${questionDrafts.length.toLocaleString("th-TH")} ข้อ`
+                        : "บันทึกข้อมูล"}
                   </button>
                   <button
                     type="button"

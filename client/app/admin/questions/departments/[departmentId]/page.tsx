@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useMemo, useState, type ComponentType, type SVGProps } from "react";
+import {
+  use,
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+  type SVGProps,
+} from "react";
 import {
   ArrowLeft,
   CircleAlert,
@@ -11,6 +18,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
+import OverviewCard from "@/app/components/overview-card";
 import { apiGet } from "@/lib/api";
 
 type DepartmentRow = {
@@ -60,6 +68,8 @@ type QuestionsResponse = {
 
 type QuestionStatusFilter = "all" | "active" | "inactive";
 type SummaryIcon = ComponentType<SVGProps<SVGSVGElement>>;
+
+const PAGE_SIZE = 10;
 
 const selectClass =
   "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-800 shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50";
@@ -123,7 +133,7 @@ function QuestionStatusBadge({ status }: { status: QuestionStatus }) {
 }
 
 function KpiCard({
-  icon: Icon,
+  icon,
   title,
   value,
   sub,
@@ -138,26 +148,14 @@ function KpiCard({
   iconClass?: string;
 }) {
   return (
-    <div
-      className={`relative min-h-[112px] overflow-hidden rounded-[28px] border p-5 backdrop-blur-sm transition-transform duration-200 hover:-translate-y-0.5 ${cardClass}`}
-    >
-      <div className="relative flex items-center gap-4">
-        <div
-          className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${iconClass} text-white shadow-[0_10px_24px_rgba(15,23,42,0.12)] ring-1 ring-white/35`}
-          aria-hidden="true"
-        >
-          <Icon className="h-6 w-6" strokeWidth={2.25} />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium leading-5 text-slate-600">{title}</div>
-          <div className="mt-1 text-3xl font-black leading-none tracking-tight text-slate-900">
-            {typeof value === "number" ? value.toLocaleString("th-TH") : value}
-          </div>
-          {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
-        </div>
-      </div>
-    </div>
+    <OverviewCard
+      icon={icon}
+      title={title}
+      value={value}
+      sub={sub}
+      cardClass={cardClass}
+      iconClass={iconClass}
+    />
   );
 }
 
@@ -201,6 +199,7 @@ export default function AdminDepartmentQuestionDetailPage({
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<QuestionStatusFilter>("all");
   const [reloadKey, setReloadKey] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     let active = true;
@@ -251,8 +250,31 @@ export default function AdminDepartmentQuestionDetailPage({
     };
   }, [numericDepartmentId, reloadKey]);
 
+  const orderedQuestions = useMemo(
+    () => [
+      ...questions.filter((question) => question.scope === "central"),
+      ...questions.filter((question) => question.scope === "department"),
+    ],
+    [questions],
+  );
+
+  const questionNumberById = useMemo(() => {
+    const counters: Record<QuestionScope, number> = {
+      central: 0,
+      department: 0,
+    };
+    const numbers = new Map<number, number>();
+
+    for (const question of orderedQuestions) {
+      counters[question.scope] += 1;
+      numbers.set(question.id, counters[question.scope]);
+    }
+
+    return numbers;
+  }, [orderedQuestions]);
+
   const visibleQuestions = useMemo(() => {
-    let list = [...questions];
+    let list = [...orderedQuestions];
 
     if (statusFilter === "active") {
       list = list.filter((question) => question.status === "active");
@@ -271,7 +293,44 @@ export default function AdminDepartmentQuestionDetailPage({
     }
 
     return list;
-  }, [questions, query, statusFilter]);
+  }, [orderedQuestions, query, statusFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, statusFilter]);
+
+  const questionPages = useMemo(() => {
+    const pages: Array<{ scope: QuestionScope; items: QuestionRow[] }> = [];
+
+    for (const scope of ["central", "department"] as const) {
+      const scopeQuestions = visibleQuestions.filter(
+        (question) => question.scope === scope,
+      );
+      for (let index = 0; index < scopeQuestions.length; index += PAGE_SIZE) {
+        pages.push({
+          scope,
+          items: scopeQuestions.slice(index, index + PAGE_SIZE),
+        });
+      }
+    }
+
+    return pages;
+  }, [visibleQuestions]);
+
+  const totalPages = Math.max(1, questionPages.length);
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const currentQuestionPage = questionPages[safeCurrentPage - 1] ?? null;
+  const paginatedQuestions = currentQuestionPage?.items ?? [];
+  const currentQuestionTitle =
+    currentQuestionPage?.scope === "central"
+      ? "คำถามกลาง"
+      : currentQuestionPage?.scope === "department"
+        ? "คำถามหน่วยงาน"
+        : null;
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   const questionSummary = useMemo(() => {
     const total = questions.length;
@@ -378,14 +437,16 @@ export default function AdminDepartmentQuestionDetailPage({
         <section className="overflow-hidden rounded-[28px] border border-white/70 bg-white/90 shadow-[0_18px_45px_rgba(37,99,235,0.08)] backdrop-blur-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-6">
             <div>
-              <h2 className="text-lg font-black text-slate-900">รายการคำถามที่ใช้ในหน่วยงานนี้</h2>
+              <h2 className="text-lg font-black text-slate-900">
+                รายการคำถามที่ใช้ในหน่วยงาน {department?.name ?? "-"}
+              </h2>
             </div>
             <div className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700">
               {visibleQuestions.length.toLocaleString("th-TH")} รายการ
             </div>
           </div>
 
-          <div className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-end">
+          <div className="grid gap-4 border-b border-slate-100 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-end">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 ค้นหาคำถาม
@@ -419,79 +480,93 @@ export default function AdminDepartmentQuestionDetailPage({
             </div>
           </div>
 
-          <div className="px-5 pb-5 sm:px-6">
-            {loading && !department ? (
-              <div className="space-y-3">
-                {[...Array(5)].map((_, index) => (
-                  <div
-                    key={`question-skeleton-${index}`}
-                    className="h-24 rounded-2xl border border-slate-200 bg-slate-50"
-                  />
-                ))}
-              </div>
-            ) : visibleQuestions.length === 0 ? (
-              <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
-                <div className="max-w-lg">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                    <ClipboardList className="h-5 w-5" />
-                  </div>
-                  <div className="mt-4 text-base font-semibold text-slate-900">
-                    ไม่พบคำถามของหน่วยงานนี้
-                  </div>
-                  <p className="mt-1 text-sm leading-6 text-slate-500">{emptyMessage}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-[760px] w-full text-sm">
-                  <thead className="border-b border-blue-700/20 bg-gradient-to-r from-sky-600 to-blue-600 text-white">
-                    <tr>
-                      <th className="w-[96px] px-4 py-3 text-center font-semibold">ข้อ</th>
-                      <th className="min-w-[300px] px-4 py-3 text-left font-semibold">คำถาม</th>
-                      <th className="w-[160px] px-4 py-3 text-center font-semibold">ประเภท</th>
-                      <th className="w-[140px] px-4 py-3 text-center font-semibold">สถานะ</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white/95">
-                    {visibleQuestions.map((row, index) => {
-                      return (
-                        <tr key={row.id} className="transition hover:bg-slate-50/80">
-                          <td className="px-4 py-4 text-center font-medium text-slate-500">
-                            {index + 1}
+          {currentQuestionTitle ? (
+            <div className="px-5 py-3 text-sm font-normal text-slate-900 sm:px-6">
+              {currentQuestionTitle}
+            </div>
+          ) : null}
+
+          <div className="overflow-x-auto">
+            <table className="min-w-[760px] w-full border-collapse text-[13px]">
+              <thead className="bg-gradient-to-r from-sky-600 via-blue-600 to-blue-700 text-white">
+                <tr className="border-b border-blue-700/30">
+                  <th className="w-[70px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
+                    ข้อ
+                  </th>
+                  <th className="min-w-[300px] border-r border-white/20 px-4 py-3.5 text-center text-sm font-bold">
+                    คำถาม
+                  </th>
+                  <th className="w-[170px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
+                    รูปแบบ
+                  </th>
+                  <th className="w-[130px] px-3 py-3.5 text-center text-sm font-bold">
+                    สถานะ
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedQuestions.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-12 text-center text-slate-500" colSpan={4}>
+                      {emptyMessage}
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedQuestions.map((row) => (
+                        <tr
+                          key={row.id}
+                          className="border-b border-sky-100 transition last:border-b-0 hover:bg-sky-50/50"
+                        >
+                          <td className="border-r border-sky-100 px-3 py-3.5 text-center text-sm font-medium text-slate-700">
+                            {questionNumberById.get(row.id) ?? row.display_order ?? 1}
                           </td>
-                          <td className="px-4 py-4">
-                            <div className="space-y-2">
-                              <div className="text-sm font-medium leading-6 text-slate-900">
-                                {row.text}
+                          <td className="border-r border-sky-100 px-4 py-3.5 text-slate-900">
+                            <div className="text-sm font-normal leading-5">{row.text}</div>
+                            {row.has_answers && (
+                              <div className="mt-1 text-[11px] font-medium leading-4 text-amber-700">
+                                มีข้อมูลการประเมินแล้ว{" "}
+                                {row.answer_count.toLocaleString("th-TH")}
+                                {" รายการ จากแบบประเมิน"}
                               </div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span
-                                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
-                                    row.scope === "department"
-                                      ? "border-sky-200 bg-sky-50 text-sky-700"
-                                      : "border-slate-200 bg-slate-100 text-slate-600"
-                                  }`}
-                                >
-                                  {row.scope === "department"
-                                    ? "คำถามของหน่วยงาน"
-                                    : "คำถามส่วนกลาง"}
-                                </span>
-                              </div>
-                            </div>
+                            )}
                           </td>
-                          <td className="px-4 py-4 text-center">
+                          <td className="border-r border-sky-100 px-3 py-3.5 text-center">
                             <QuestionTypeBadge type={row.type} />
                           </td>
-                          <td className="px-4 py-4 text-center">
+                          <td className="px-3 py-3.5 text-center">
                             <QuestionStatusBadge status={row.status} />
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end border-t border-sky-100 bg-sky-50/30 px-4 py-3">
+            <div className="flex items-center gap-2 sm:ml-auto">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={safeCurrentPage <= 1}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
+              >
+                ย้อนกลับ
+              </button>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
+                หน้า {safeCurrentPage} / {totalPages}
               </div>
-            )}
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentPage((page) => Math.min(totalPages, page + 1))
+                }
+                disabled={safeCurrentPage >= totalPages}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
+              >
+                ถัดไป
+              </button>
+            </div>
           </div>
         </section>
       </div>

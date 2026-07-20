@@ -112,19 +112,6 @@ export async function listDashboardQuestions({ params, request, set }: any) {
   }
 
   const surveyId = survey.id;
-  const centralSettingRes = await db.query(
-    `
-    SELECT EXISTS (
-      SELECT 1
-      FROM department_central_question_settings
-      WHERE department_id = $1
-        AND survey_id = $2
-        AND enabled = true
-    ) AS central_enabled
-    `,
-    [departmentId, surveyId],
-  );
-  const centralEnabled = Boolean(centralSettingRes.rows[0]?.central_enabled);
 
   const result = await db.query(
     `
@@ -137,7 +124,15 @@ export async function listDashboardQuestions({ params, request, set }: any) {
       q.status,
       q.display_order,
       q.department_id,
-      ($3::boolean AND q.scope = 'central') AS is_selected,
+      (
+        q.scope = 'central'
+        AND EXISTS (
+          SELECT 1
+          FROM department_central_questions dcq
+          WHERE dcq.department_id = $2
+            AND dcq.question_id = q.id
+        )
+      ) AS is_selected,
       COUNT(a.id) FILTER (
         WHERE (q.type = 'rating' AND a.rating IS NOT NULL)
            OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
@@ -182,7 +177,11 @@ export async function listDashboardQuestions({ params, request, set }: any) {
       q.display_order ASC NULLS LAST,
       q.id ASC
     `,
-    [surveyId, departmentId, centralEnabled],
+    [surveyId, departmentId],
+  );
+
+  const centralEnabled = result.rows.some(
+    (question) => question.scope === "central" && question.is_selected,
   );
 
   return {
@@ -256,6 +255,48 @@ export async function updateDepartmentCentralQuestions({
   const client = await db.connect();
   try {
     await client.query("BEGIN");
+
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('department-central-questions'), hashtext($1))`,
+      [`${survey.id}:${departmentId}`],
+    );
+
+    const lockedSelectionsRes = await client.query(
+      `
+      SELECT q.id
+      FROM department_central_questions dcq
+      JOIN questions q ON q.id = dcq.question_id
+      WHERE dcq.department_id = $1
+        AND q.survey_id = $2
+        AND q.scope = 'central'
+        AND NOT (q.id = ANY($3::bigint[]))
+        AND EXISTS (
+          SELECT 1
+          FROM responses r
+          JOIN answers a
+            ON a.response_id = r.id
+           AND a.question_id = q.id
+          WHERE r.department_id = $1
+            AND r.survey_id = $2
+            AND (
+              (q.type = 'rating' AND a.rating IS NOT NULL)
+              OR (q.type = 'text' AND NULLIF(BTRIM(a.comment), '') IS NOT NULL)
+            )
+        )
+      FOR UPDATE OF dcq
+      `,
+      [departmentId, survey.id, questionIds],
+    );
+
+    if ((lockedSelectionsRes.rowCount ?? 0) > 0) {
+      await client.query("ROLLBACK");
+      set.status = 409;
+      return {
+        message:
+          "ไม่สามารถนำคำถามกลางที่มีผู้ทำแบบประเมินแล้วออกได้ กรุณาเลือกคำถามดังกล่าวไว้ตามเดิม",
+        locked_question_ids: lockedSelectionsRes.rows.map((row) => Number(row.id)),
+      };
+    }
 
     await client.query(
       `
@@ -376,6 +417,84 @@ export async function createDashboardQuestion({ params, body, request, set }: an
 
     set.status = 201;
     return { message: "Created", id };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function createDashboardQuestions({ params, body, request, set }: any) {
+  const departmentId = Number(params.departmentId);
+  if (!Number.isFinite(departmentId) || departmentId <= 0) {
+    set.status = 400;
+    return { message: "Invalid departmentId" };
+  }
+
+  if (!(await ensureDepartmentAccess(request, departmentId, set))) {
+    return { message: "Forbidden: cannot access this department" };
+  }
+
+  const questions = Array.isArray(body?.questions) ? body.questions : [];
+  if (questions.length === 0 || questions.length > 50) {
+    set.status = 400;
+    return { message: "Questions must contain between 1 and 50 items" };
+  }
+
+  const normalizedQuestions: Array<{ text: string; type: string }> = questions.map(
+    (question: any) => ({
+      text: String(question?.text ?? "").trim(),
+      type: String(question?.type ?? ""),
+    }),
+  );
+  const invalidQuestionIndex = normalizedQuestions.findIndex(
+    (question) =>
+      !question.text || !["rating", "text"].includes(question.type),
+  );
+
+  if (invalidQuestionIndex >= 0) {
+    set.status = 400;
+    return { message: `Invalid question at item ${invalidQuestionIndex + 1}` };
+  }
+
+  const survey = await getActiveSurvey();
+  if (!survey) {
+    set.status = 409;
+    return { message: "No active survey" };
+  }
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const createdIds: number[] = [];
+    for (const question of normalizedQuestions) {
+      const inserted = await client.query(
+        `
+        INSERT INTO questions
+          (survey_id, department_id, scope, type, text, status, display_order)
+        VALUES
+          ($1, $2, 'department', $3, $4, 'active', 0)
+        RETURNING id
+        `,
+        [survey.id, departmentId, question.type, question.text],
+      );
+
+      const id = Number(inserted.rows[0].id);
+      createdIds.push(id);
+      await reorderQuestionDisplayOrders(client, {
+        questionId: id,
+        surveyId: survey.id,
+        scope: "department",
+        departmentId,
+        requestedOrder: null,
+      });
+    }
+
+    await client.query("COMMIT");
+    set.status = 201;
+    return { message: "Created", total: createdIds.length, ids: createdIds };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

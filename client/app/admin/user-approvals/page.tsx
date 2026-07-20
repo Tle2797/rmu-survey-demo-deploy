@@ -10,6 +10,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Swal from "sweetalert2";
+import OverviewCard from "@/app/components/overview-card";
 import { apiGet, apiPut } from "@/lib/api";
 import { getThaiAlertMessage } from "@/lib/alert-message";
 
@@ -52,6 +53,7 @@ type ApprovalActionResponse = {
 type KpiIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
 const PAGE_SIZE = 10;
+const USER_APPROVALS_UPDATED_EVENT = "user-approvals:updated";
 
 const inputClass =
   "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-800 placeholder:text-slate-400 shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-100";
@@ -73,7 +75,7 @@ const statusLabels: Record<ApprovalStatus, string> = {
 };
 
 function KpiCard({
-  icon: Icon,
+  icon,
   title,
   value,
   iconClass,
@@ -84,21 +86,7 @@ function KpiCard({
   iconClass: string;
 }) {
   return (
-    <div className="rounded-3xl border border-slate-200/80 bg-white/95 p-5 shadow-[0_16px_40px_rgba(37,99,235,0.08)]">
-      <div className="flex items-start gap-4">
-        <div
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${iconClass} text-white shadow-[0_10px_24px_rgba(15,23,42,0.12)]`}
-        >
-          <Icon className="h-6 w-6" strokeWidth={2.25} />
-        </div>
-        <div>
-          <div className="text-sm font-medium text-slate-600">{title}</div>
-          <div className="text-2xl font-black leading-tight text-slate-900">
-            {value.toLocaleString("th-TH")}
-          </div>
-        </div>
-      </div>
-    </div>
+    <OverviewCard icon={icon} title={title} value={value} iconClass={iconClass} />
   );
 }
 
@@ -259,6 +247,7 @@ export default function UserApprovalsPage() {
         `/api/admin/user-approvals/${row.id}/approve`,
       );
       await loadData();
+      window.dispatchEvent(new Event(USER_APPROVALS_UPDATED_EVENT));
       await Swal.fire({
         icon: res.email_sent === false ? "warning" : "success",
         title: "อนุมัติเรียบร้อย",
@@ -310,6 +299,7 @@ export default function UserApprovalsPage() {
         reason ? { reason } : {},
       );
       await loadData();
+      window.dispatchEvent(new Event(USER_APPROVALS_UPDATED_EVENT));
       await Swal.fire({
         icon: res.email_sent === false ? "warning" : "success",
         title: "บันทึกผลเรียบร้อย",
@@ -456,26 +446,25 @@ export default function UserApprovalsPage() {
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_18px_50px_rgba(37,99,235,0.08)]">
+        <section className="overflow-hidden rounded-3xl border border-sky-100 bg-white/95 shadow-[0_20px_55px_rgba(37,99,235,0.10)]">
           <div className="overflow-hidden">
-            <table className="w-full table-fixed text-[13px]">
-              <thead className="border-b border-blue-700/20 bg-gradient-to-r from-sky-600 to-blue-600 text-white">
-                <tr>
-                  <th className="w-[5%] px-3 py-3 text-center font-semibold">ลำดับ</th>
-                  <th className="w-[12%] px-3 py-3 text-left font-semibold">ตำแหน่ง</th>
-                  <th className="w-[15%] px-3 py-3 text-left font-semibold">หน่วยงาน</th>
-                  <th className="w-[15%] px-3 py-3 text-left font-semibold">ชื่อ นามสกุล</th>
-                  <th className="w-[9%] px-3 py-3 text-left font-semibold">ชื่อผู้ใช้</th>
-                  <th className="w-[15%] px-3 py-3 text-left font-semibold">อีเมล</th>
-                  <th className="w-[10%] px-3 py-3 text-left font-semibold">วันที่ลงทะเบียน</th>
-                  <th className="w-[8%] px-3 py-3 text-center font-semibold">สถานะ</th>
-                  <th className="w-[11%] px-3 py-3 text-center font-semibold">การทำงาน</th>
+            <table className="w-full table-fixed border-collapse text-[13px]">
+              <thead className="bg-gradient-to-r from-sky-600 via-blue-600 to-blue-700 text-white">
+                <tr className="border-b border-blue-700/30">
+                  <th className="w-[5%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">ลำดับ</th>
+                  <th className="w-[12%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">ตำแหน่ง</th>
+                  <th className="w-[16%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">หน่วยงาน</th>
+                  <th className="w-[15%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">ชื่อ นามสกุล</th>
+                  <th className="w-[10%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">ชื่อผู้ใช้</th>
+                  <th className="w-[17%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">อีเมล</th>
+                  <th className="w-[10%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">วันที่ลงทะเบียน</th>
+                  <th className="w-[15%] px-3 py-3.5 text-center text-sm font-bold">สถานะ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {filteredItems.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                       ไม่พบข้อมูลผู้ลงทะเบียน
                     </td>
                   </tr>
@@ -483,55 +472,54 @@ export default function UserApprovalsPage() {
                   paginatedItems.map((row, index) => {
                     const busy = busyId === row.id;
                     return (
-                      <tr key={row.id} className="align-top transition hover:bg-slate-50">
-                        <td className="px-3 py-3 text-center text-slate-500">
+                      <tr key={row.id} className="border-b border-sky-100 align-top transition last:border-b-0 hover:bg-sky-50/50">
+                        <td className="border-r border-sky-100 px-3 py-3.5 text-center text-slate-500">
                           {startItem + index}
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="border-r border-sky-100 px-3 py-3.5">
                           <RoleBadge
                             role={row.role}
                             roleName={roleLabels[row.role] ?? row.role}
                           />
                         </td>
-                        <td className="px-3 py-3 leading-5 text-slate-700">
+                        <td className="border-r border-sky-100 px-3 py-3.5 leading-5 text-slate-700">
                           <span className="block whitespace-normal break-words leading-5" title={row.department_name || undefined}>
                             {row.department_name || "-"}
                           </span>
                         </td>
-                        <td className="px-3 py-3 font-medium leading-5 text-slate-900">
+                        <td className="border-r border-sky-100 px-3 py-3.5 font-normal leading-5 text-slate-900">
                           <span className="block truncate" title={fullName(row)}>
                             {fullName(row)}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-slate-600">
+                        <td className="border-r border-sky-100 px-3 py-3.5 text-slate-600">
                           <span className="block truncate" title={row.username}>
                             {row.username}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-slate-600">
+                        <td className="border-r border-sky-100 px-3 py-3.5 text-slate-600">
                           <span className="block truncate" title={row.email || "-"}>
                             {row.email || "-"}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-slate-600">
+                        <td className="border-r border-sky-100 px-3 py-3.5 text-slate-600">
                           {formatDate(row.created_at)}
                         </td>
-                        <td className="px-3 py-3 text-center">
-                          <StatusBadge status={row.approval_status} />
-                          {row.approval_status === "rejected" && row.rejected_reason && (
-                            <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-red-500">
-                              {row.rejected_reason}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        <td className="px-3 py-3.5">
+                          <div className="flex flex-col items-center justify-center gap-1.5 text-center">
+                            <StatusBadge status={row.approval_status} />
+                            {row.approval_status === "rejected" && row.rejected_reason && (
+                              <div className="line-clamp-2 text-[11px] leading-4 text-red-500">
+                                {row.rejected_reason}
+                              </div>
+                            )}
+                            <div className="flex flex-wrap items-center justify-center gap-1.5">
                             {row.approval_status !== "approved" && (
                               <button
                                 type="button"
                                 onClick={() => approveUser(row)}
                                 disabled={busyId !== null}
-                                className="inline-flex items-center gap-1 rounded-xl border border-emerald-500 bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:border-emerald-600 hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-500 bg-gradient-to-b from-emerald-500 to-emerald-600 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-emerald-600 hover:to-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 <CheckCircle2 className="h-3.5 w-3.5" />
                                 {busy ? "กำลังบันทึก" : "อนุมัติ"}
@@ -542,7 +530,7 @@ export default function UserApprovalsPage() {
                                 type="button"
                                 onClick={() => rejectUser(row)}
                                 disabled={busyId !== null}
-                                className="rounded-xl border border-red-500 bg-red-500 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:border-red-600 hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="rounded-lg border border-red-500 bg-gradient-to-b from-red-500 to-red-600 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-red-600 hover:to-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 ไม่อนุมัติ
                               </button>
@@ -552,6 +540,7 @@ export default function UserApprovalsPage() {
                                 {formatDate(row.approval_reviewed_at)}
                               </span>
                             )}
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -562,24 +551,24 @@ export default function UserApprovalsPage() {
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex justify-end border-t border-sky-100 bg-sky-50/30 px-4 py-3">
             <div className="flex items-center gap-2 sm:ml-auto">
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={safeCurrentPage <= 1}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
               >
                 ย้อนกลับ
               </button>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
                 หน้า {safeCurrentPage} / {totalPages}
               </div>
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 disabled={safeCurrentPage >= totalPages}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
               >
                 ถัดไป
               </button>

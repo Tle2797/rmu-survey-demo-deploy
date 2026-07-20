@@ -148,10 +148,9 @@ export async function submitSurveyResponse(payload: Record<string, unknown>) {
           q.scope = 'central'
           AND EXISTS (
             SELECT 1
-            FROM department_central_question_settings dcqs
-            WHERE dcqs.department_id = $2
-              AND dcqs.survey_id = $1
-              AND dcqs.enabled = true
+            FROM department_central_questions dcq
+            WHERE dcq.department_id = $2
+              AND dcq.question_id = q.id
           )
         )
         OR (q.scope = 'department' AND q.department_id = $2)
@@ -206,6 +205,41 @@ export async function submitSurveyResponse(payload: Record<string, unknown>) {
 
   try {
     await client.query("BEGIN");
+
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('department-central-questions'), hashtext($1))`,
+      [`${surveyId}:${departmentId}`],
+    );
+
+    const submittedQuestionIds = Array.from(seenQuestionIds);
+    const currentAllowedQRes = await client.query(
+      `
+      SELECT q.id
+      FROM questions q
+      WHERE q.survey_id = $1
+        AND q.status = 'active'
+        AND q.id = ANY($3::bigint[])
+        AND (
+          (
+            q.scope = 'central'
+            AND EXISTS (
+              SELECT 1
+              FROM department_central_questions dcq
+              WHERE dcq.department_id = $2
+                AND dcq.question_id = q.id
+            )
+          )
+          OR (q.scope = 'department' AND q.department_id = $2)
+        )
+      `,
+      [surveyId, departmentId, submittedQuestionIds],
+    );
+
+    if ((currentAllowedQRes.rowCount ?? 0) !== submittedQuestionIds.length) {
+      fail(409, {
+        message: "รายการคำถามถูกปรับปรุงแล้ว กรุณาโหลดแบบประเมินใหม่ก่อนส่งคำตอบ",
+      });
+    }
 
     const tokenRes = await client.query(
       `

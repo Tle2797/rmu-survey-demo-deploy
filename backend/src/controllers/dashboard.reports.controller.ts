@@ -280,6 +280,7 @@ export async function getDashboardReports({ params, query, request, set }: any) 
     SELECT
       q.id AS question_id,
       q.text AS question_text,
+      q.scope AS question_scope,
       COUNT(a.id)::int AS total_responses,
       ROUND(AVG(a.rating)::numeric, 2) AS avg_rating,
       ROUND(stddev_samp(a.rating)::numeric, 2) AS sd

@@ -13,6 +13,7 @@ import {
   ShieldAlert,
   X,
 } from "lucide-react";
+import OverviewCard from "@/app/components/overview-card";
 import { apiGet } from "@/lib/api";
 
 type RatingBand = {
@@ -149,7 +150,7 @@ function formatTime(iso: string): string {
 }
 
 function KpiCard({
-  icon: Icon,
+  icon,
   label,
   value,
   sub,
@@ -162,18 +163,7 @@ function KpiCard({
   iconClass: string;
 }) {
   return (
-    <div className="rounded-3xl border border-slate-200/80 bg-white/95 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
-      <div className="flex items-start gap-4">
-        <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${iconClass} text-white shadow-[0_10px_24px_rgba(15,23,42,0.12)]`}>
-          <Icon className="h-6 w-6" strokeWidth={2.25} />
-        </div>
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-slate-600">{label}</div>
-          <div className="text-2xl font-black leading-tight tracking-tight text-slate-900">{value}</div>
-          {sub ? <div className="mt-1 text-xs text-slate-500">{sub}</div> : null}
-        </div>
-      </div>
-    </div>
+    <OverviewCard icon={icon} title={label} value={value} sub={sub} iconClass={iconClass} />
   );
 }
 

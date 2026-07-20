@@ -21,13 +21,24 @@ type DeptRow = {
   id: number;
   name: string;
   is_active: boolean;
+  department_group_id: number;
+  department_group_name: string;
+  department_group_display_order: number;
   created_at?: string;
   updated_at?: string;
+};
+
+type DepartmentGroup = {
+  id: number;
+  name: string;
+  display_order: number;
+  is_active: boolean;
 };
 
 type DeptListRes = {
   total: number;
   items: DeptRow[];
+  groups: DepartmentGroup[];
 };
 
 type DepartmentDeleteResponse = {
@@ -325,8 +336,6 @@ const DEPT_OVERVIEW_THEMES = {
   },
 } as const;
 
-const PAGE_SIZE = 10;
-
 const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "ทั้งหมด" },
   { value: "active", label: "ใช้งานอยู่" },
@@ -335,6 +344,7 @@ const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
 
 export default function AdminDepartmentsPage() {
   const [items, setItems] = useState<DeptRow[]>([]);
+  const [departmentGroups, setDepartmentGroups] = useState<DepartmentGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -345,11 +355,13 @@ export default function AdminDepartmentsPage() {
   const [mode, setMode] = useState<ModalMode>("create");
   const [editing, setEditing] = useState<DeptRow | null>(null);
   const [name, setName] = useState("");
+  const [departmentGroupId, setDepartmentGroupId] = useState<number | "">("");
   const [currentPage, setCurrentPage] = useState(1);
 
   const load = async () => {
     const res = await apiGet<DeptListRes>("/api/admin/departments");
     setItems(res.items ?? []);
+    setDepartmentGroups(res.groups ?? []);
   };
 
   useEffect(() => {
@@ -398,44 +410,79 @@ export default function AdminDepartmentsPage() {
       list = list.filter((d) => {
         const idText = String(d.id);
         const nameText = (d.name ?? "").toLowerCase();
-        return idText.includes(keyword) || nameText.includes(keyword);
+        const groupNameText = (d.department_group_name ?? "").toLowerCase();
+        return (
+          idText.includes(keyword) ||
+          nameText.includes(keyword) ||
+          groupNameText.includes(keyword)
+        );
       });
     }
 
     list.sort((a, b) => {
-      const aTime = a.created_at ? Date.parse(a.created_at) : 0;
-      const bTime = b.created_at ? Date.parse(b.created_at) : 0;
-      const safeATime = Number.isFinite(aTime) ? aTime : 0;
-      const safeBTime = Number.isFinite(bTime) ? bTime : 0;
-
-      if (safeATime !== safeBTime) {
-        return safeBTime - safeATime;
+      const displayOrderDiff =
+        Number(a.department_group_display_order ?? 0) -
+        Number(b.department_group_display_order ?? 0);
+      if (displayOrderDiff !== 0) {
+        return displayOrderDiff;
       }
 
-      return b.id - a.id;
+      const groupIdDiff =
+        Number(a.department_group_id ?? 0) - Number(b.department_group_id ?? 0);
+      if (groupIdDiff !== 0) {
+        return groupIdDiff;
+      }
+
+      const aCreatedAt = a.created_at ? Date.parse(a.created_at) : 0;
+      const bCreatedAt = b.created_at ? Date.parse(b.created_at) : 0;
+      const createdAtDiff =
+        (Number.isFinite(aCreatedAt) ? aCreatedAt : 0) -
+        (Number.isFinite(bCreatedAt) ? bCreatedAt : 0);
+
+      return createdAtDiff !== 0
+        ? createdAtDiff
+        : Number(a.id) - Number(b.id);
     });
 
     return list;
   }, [items, q, statusFilter]);
 
-  useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
-    setCurrentPage((current) => Math.min(current, totalPages));
-  }, [filteredItems.length]);
+  const groupedItems = useMemo(() => {
+    const groups: DeptRow[][] = [];
 
-  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+    for (const department of filteredItems) {
+      const currentGroup = groups[groups.length - 1];
+      const currentGroupId = currentGroup?.[0]?.department_group_id;
+
+      if (
+        currentGroup === undefined ||
+        Number(currentGroupId) !== Number(department.department_group_id)
+      ) {
+        groups.push([department]);
+      } else {
+        currentGroup.push(department);
+      }
+    }
+
+    return groups;
+  }, [filteredItems]);
+
+  const totalPages = Math.max(1, groupedItems.length);
   const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  useEffect(() => {
+    setCurrentPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
+
   const paginatedItems = useMemo(() => {
-    const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
-    return filteredItems.slice(startIndex, startIndex + PAGE_SIZE);
-  }, [filteredItems, safeCurrentPage]);
-  const startItem =
-    filteredItems.length === 0 ? 0 : (safeCurrentPage - 1) * PAGE_SIZE + 1;
+    return groupedItems[safeCurrentPage - 1] ?? [];
+  }, [groupedItems, safeCurrentPage]);
 
   const openCreate = () => {
     setMode("create");
     setEditing(null);
     setName("");
+    setDepartmentGroupId("");
     setOpen(true);
   };
 
@@ -443,6 +490,7 @@ export default function AdminDepartmentsPage() {
     setMode("edit");
     setEditing(row);
     setName(row.name);
+    setDepartmentGroupId(Number(row.department_group_id));
     setOpen(true);
   };
 
@@ -451,6 +499,7 @@ export default function AdminDepartmentsPage() {
     setEditing(null);
     setMode("create");
     setName("");
+    setDepartmentGroupId("");
   };
 
   const save = async () => {
@@ -458,6 +507,11 @@ export default function AdminDepartmentsPage() {
       const trimmedName = name.trim();
       if (!trimmedName) {
         await showErrorAlert("บันทึกไม่สำเร็จ", "กรุณากรอกชื่อหน่วยงาน");
+        return;
+      }
+
+      if (!Number.isInteger(departmentGroupId) || Number(departmentGroupId) <= 0) {
+        await showErrorAlert("บันทึกไม่สำเร็จ", "กรุณาเลือกกลุ่มหน่วยงาน");
         return;
       }
 
@@ -481,6 +535,7 @@ export default function AdminDepartmentsPage() {
       if (mode === "create") {
         await apiPost("/api/admin/departments", {
           name: trimmedName,
+          department_group_id: Number(departmentGroupId),
         });
       } else {
         if (!editing) {
@@ -489,6 +544,7 @@ export default function AdminDepartmentsPage() {
         }
         await apiPut(`/api/admin/departments/${editing.id}`, {
           name: trimmedName,
+          department_group_id: Number(departmentGroupId),
         });
       }
 
@@ -750,27 +806,38 @@ export default function AdminDepartmentsPage() {
             + เพิ่มหน่วยงาน
           </button>
         </div>
-        <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_18px_50px_rgba(37,99,235,0.08)]">
+        <div className="space-y-2">
+          {paginatedItems.length > 0 ? (
+            <div className="flex items-center gap-3 px-5 py-1 text-sm text-slate-800">
+              <span className="font-semibold">
+                {paginatedItems[0]?.department_group_name}
+              </span>
+              <span className="ml-auto rounded-full border border-sky-200 px-2.5 py-1 text-xs font-medium text-sky-700">
+                {formatCount(paginatedItems.length)} หน่วยงาน
+              </span>
+            </div>
+          ) : null}
+          <div className="overflow-hidden rounded-3xl border border-sky-100 bg-white/95 shadow-[0_20px_55px_rgba(37,99,235,0.10)]">
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-blue-700/20 bg-gradient-to-r from-sky-600 to-blue-600 text-white">
-                <tr>
-                  <th className="w-[80px] px-4 py-3 text-center font-semibold">
+            <table className="min-w-[760px] w-full border-collapse text-[13px]">
+              <thead className="bg-gradient-to-r from-sky-600 via-blue-600 to-blue-700 text-white">
+                <tr className="border-b border-blue-700/30">
+                  <th className="w-[80px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
                     ลำดับ
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold">
+                  <th className="border-r border-white/20 px-4 py-3.5 text-center text-sm font-bold">
                     ชื่อหน่วยงาน
                   </th>
-                  <th className="w-[140px] px-4 py-3 text-center font-semibold">
+                  <th className="w-[130px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
                     สถานะ
                   </th>
-                  <th className="w-[260px] px-4 py-3 text-center font-semibold">
+                  <th className="w-[240px] px-3 py-3.5 text-center text-sm font-bold">
                     การทำงาน
                   </th>
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {filteredItems.length === 0 ? (
                   <tr>
                     <td
@@ -784,80 +851,84 @@ export default function AdminDepartmentsPage() {
                   </tr>
                 ) : (
                   paginatedItems.map((d, idx) => (
-                    <tr key={d.id} className="transition hover:bg-slate-50">
-                      <td className="px-4 py-3 text-center text-slate-500">
-                        {startItem + idx}
-                      </td>
+                        <tr
+                          key={d.id}
+                          className="border-b border-sky-100 transition last:border-b-0 hover:bg-sky-50/50"
+                        >
+                          <td className="border-r border-sky-100 px-3 py-3.5 text-center text-slate-500">
+                            {idx + 1}
+                          </td>
 
-                      <td className="px-4 py-3 font-medium text-slate-900">
-                        {d.name}
-                      </td>
+                          <td className="border-r border-sky-100 px-4 py-3.5 font-normal text-slate-900">
+                            {d.name}
+                          </td>
 
-                      <td className="px-4 py-3 text-center">
-                        <StatusBadge active={d.is_active} />
-                      </td>
+                          <td className="border-r border-sky-100 px-3 py-3.5 text-center">
+                            <StatusBadge active={d.is_active} />
+                          </td>
 
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <ToggleSwitch
-                            checked={d.is_active}
-                            onChange={() => toggleActive(d)}
-                            disabled={busy}
-                            title={
-                              d.is_active
-                                ? "คลิกเพื่อปิดใช้งาน"
-                                : "คลิกเพื่อเปิดใช้งาน"
-                            }
-                          />
+                          <td className="px-3 py-3.5 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <ToggleSwitch
+                                checked={d.is_active}
+                                onChange={() => toggleActive(d)}
+                                disabled={busy}
+                                title={
+                                  d.is_active
+                                    ? "คลิกเพื่อปิดใช้งาน"
+                                    : "คลิกเพื่อเปิดใช้งาน"
+                                }
+                              />
 
-                          <div className="mx-1 h-5 w-px bg-slate-200" />
+                              <div className="mx-1 h-5 w-px bg-slate-200" />
 
-                          <button
-                            onClick={() => openEdit(d)}
-                            className="rounded-xl border border-amber-500 bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-amber-600 hover:bg-amber-600 disabled:opacity-50"
-                            disabled={busy}
-                          >
-                            แก้ไข
-                          </button>
+                              <button
+                                onClick={() => openEdit(d)}
+                                className="rounded-lg border border-amber-400 bg-gradient-to-b from-amber-400 to-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-amber-500 hover:to-amber-600 disabled:opacity-50"
+                                disabled={busy}
+                              >
+                                แก้ไข
+                              </button>
 
-                          <button
-                            onClick={() => deleteDept(d)}
-                            className="rounded-xl border border-red-500 bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-red-600 hover:bg-red-600 disabled:opacity-50"
-                            disabled={busy}
-                          >
-                            ลบ
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                              <button
+                                onClick={() => deleteDept(d)}
+                                className="rounded-lg border border-red-500 bg-gradient-to-b from-red-500 to-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-red-600 hover:to-red-700 disabled:opacity-50"
+                                disabled={busy}
+                              >
+                                ลบ
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
                   ))
                 )}
               </tbody>
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex justify-end border-t border-sky-100 bg-sky-50/30 px-4 py-3">
             <div className="flex items-center gap-2 sm:ml-auto">
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={safeCurrentPage <= 1}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
               >
                 ย้อนกลับ
               </button>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
-                หน้า {safeCurrentPage} / {totalPages}
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
+                กลุ่ม {groupedItems.length === 0 ? 0 : safeCurrentPage} / {groupedItems.length}
               </div>
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 disabled={safeCurrentPage >= totalPages}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
               >
                 ถัดไป
               </button>
             </div>
+          </div>
           </div>
         </div>
 
@@ -886,6 +957,43 @@ export default function AdminDepartmentsPage() {
 
               <div className="p-6">
                 <div className="space-y-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      กลุ่มหน่วยงาน
+                    </label>
+                    <select
+                      value={departmentGroupId}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        setDepartmentGroupId(Number.isInteger(value) && value > 0 ? value : "");
+                      }}
+                      className={selectClass}
+                      disabled={busy || departmentGroups.length === 0}
+                    >
+                      <option value="">เลือกกลุ่มหน่วยงาน</option>
+                      {departmentGroups.map((group) => {
+                        const isCurrentGroup =
+                          Number(editing?.department_group_id) === Number(group.id);
+
+                        return (
+                          <option
+                            key={group.id}
+                            value={group.id}
+                            disabled={!group.is_active && !isCurrentGroup}
+                          >
+                            {group.name}
+                            {!group.is_active ? " (ปิดใช้งาน)" : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    {departmentGroups.length === 0 && (
+                      <p className="mt-1.5 text-xs text-red-600">
+                        ไม่พบกลุ่มหน่วยงาน กรุณาเพิ่มหรือเปิดใช้งานกลุ่มหน่วยงานก่อน
+                      </p>
+                    )}
+                  </div>
+
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700">
                       ชื่อหน่วยงาน

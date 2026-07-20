@@ -19,15 +19,21 @@ export async function listQRCodes() {
        d.id,
        d.name,
        d.is_active,
+       d.created_at,
+       dg.id AS department_group_id,
+       dg.name AS department_group_name,
+       dg.display_order AS department_group_display_order,
        q.id       AS qrcode_id,
        q.image_path,
        q.link_target,
        q.created_at AS qr_created_at
      FROM departments d
+     JOIN department_groups dg
+       ON dg.id = d.department_group_id
      LEFT JOIN qrcodes q
        ON q.department_id = d.id
       AND q.type = 'department'
-     ORDER BY d.created_at DESC, d.id DESC`
+     ORDER BY dg.display_order ASC, dg.id ASC, d.created_at ASC, d.id ASC`
   );
 
   const departments = deptRes.rows;

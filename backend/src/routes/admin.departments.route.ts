@@ -19,11 +19,15 @@ export const adminDepartmentsRoute = new Elysia({
   .post("/", createAdminDepartment, {
     body: t.Object({
       name: t.String(),
-    }, { additionalProperties: true }),
+      department_group_id: t.Number(),
+    }),
   })
   .put("/:id", updateAdminDepartment, {
     params: t.Object({ id: t.String() }),
-    body: t.Object({ name: t.String() }),
+    body: t.Object({
+      name: t.String(),
+      department_group_id: t.Number(),
+    }),
   })
   .put("/:id/toggle-active", toggleAdminDepartmentActive, {
     params: t.Object({ id: t.String() }),

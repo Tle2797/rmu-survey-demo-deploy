@@ -8,9 +8,9 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
+import OverviewCard from "@/app/components/overview-card";
 import { apiGet } from "@/lib/api";
 import { useReactToPrint } from "react-to-print";
-import * as XLSX from "xlsx";
 import {
   CalendarDays,
   CircleAlert,
@@ -59,6 +59,7 @@ type ReportData = {
   questions: {
     question_id: number;
     question_text: string;
+    question_scope: "central" | "department";
     avg_rating: number | null;
     sd: number | null;
   }[];
@@ -278,6 +279,233 @@ function buildNoDataMessage(
   return `ขณะนี้ไม่มีข้อมูล${periodText}`;
 }
 
+function escapeExcelXml(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/\r?\n/g, "&#10;");
+}
+
+function sanitizeExcelFileName(value: string) {
+  return value.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim();
+}
+
+function renderExcelCell(
+  value: string | number | null | undefined,
+  styleId: string,
+  options?: { mergeAcross?: number; type?: "String" | "Number" },
+) {
+  const merge = options?.mergeAcross
+    ? ` ss:MergeAcross="${options.mergeAcross}"`
+    : "";
+  const type = options?.type ?? "String";
+
+  return `<Cell ss:StyleID="${styleId}"${merge}><Data ss:Type="${type}">${escapeExcelXml(value)}</Data></Cell>`;
+}
+
+function groupReportQuestions(questions: ReportData["questions"]) {
+  return (["central", "department"] as const)
+    .map((scope) => ({
+      scope,
+      title: formatQuestionScopeLabel(scope),
+      questions: questions.filter((question) => question.question_scope === scope),
+    }))
+    .filter((group) => group.questions.length > 0);
+}
+
+function renderQuestionTables(questions: ReportData["questions"]) {
+  const groups = groupReportQuestions(questions);
+
+  return groups
+    .map(
+      (group, groupIndex) => `<Row ss:Height="22">
+        ${renderExcelCell(group.title, "Default", { mergeAcross: 4 })}
+      </Row>
+      <Row ss:AutoFitHeight="1">
+        ${renderExcelCell("ข้อ", "Header")}
+        ${renderExcelCell("คำถาม", "Header")}
+        ${renderExcelCell("คะแนนเฉลี่ย", "Header")}
+        ${renderExcelCell("ส่วนเบี่ยงเบนมาตรฐาน", "Header", { mergeAcross: 1 })}
+      </Row>
+      ${group.questions
+        .map(
+          (item, index) => `<Row ss:AutoFitHeight="1">
+            ${renderExcelCell(index + 1, "CenterCell", { type: "Number" })}
+            ${renderExcelCell(item.question_text, "Cell")}
+            ${renderExcelCell(formatScore(item.avg_rating), "CenterCell")}
+            ${renderExcelCell(item.sd === null ? "-" : item.sd.toFixed(2), "CenterCell", {
+              mergeAcross: 1,
+            })}
+          </Row>`,
+        )
+        .join("")}
+      ${groupIndex < groups.length - 1 ? '<Row ss:Height="8" />' : ""}`,
+    )
+    .join("");
+}
+
+function renderCommentRows(comments: ReportData["comments"]) {
+  return comments
+    .map(
+      (item, index) => `<Row ss:AutoFitHeight="1">
+        ${renderExcelCell(index + 1, "CenterCell", { type: "Number" })}
+        ${renderExcelCell(item.question_text, "Cell")}
+        ${renderExcelCell(formatQuestionScopeLabel(item.question_scope), "CenterCell")}
+        ${renderExcelCell(item.comment, "Cell")}
+        ${renderExcelCell(formatDateTime(item.submitted_at), "CenterCell")}
+      </Row>`,
+    )
+    .join("");
+}
+
+function buildDepartmentReportExcelXml({
+  data,
+  departmentDisplayName,
+  surveyTitle,
+  selectedPeriodLabel,
+  selectedRespondentGroupLabel,
+}: {
+  data: ReportData;
+  departmentDisplayName: string;
+  surveyTitle: string;
+  selectedPeriodLabel: string;
+  selectedRespondentGroupLabel: string;
+}) {
+  const commentsSection =
+    data.comments.length > 0
+      ? `<Row ss:Height="16" />
+        <Row>${renderExcelCell("ความคิดเห็นจากผู้ประเมิน", "SectionTitle", {
+          mergeAcross: 4,
+        })}</Row>
+        <Row ss:AutoFitHeight="1">
+          ${renderExcelCell("ข้อ", "Header")}
+          ${renderExcelCell("คำถาม", "Header")}
+          ${renderExcelCell("ประเภทคำถาม", "Header")}
+          ${renderExcelCell("ความคิดเห็น", "Header")}
+          ${renderExcelCell("วันที่", "Header")}
+        </Row>
+        ${renderCommentRows(data.comments)}
+      `
+      : "";
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook
+  xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:html="http://www.w3.org/TR/REC-html40">
+  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+    <Title>รายงานหน่วยงาน</Title>
+  </DocumentProperties>
+  <Styles>
+    <Style ss:ID="Default" ss:Name="Normal">
+      <Alignment ss:Vertical="Top" ss:WrapText="1"/>
+      <Font ss:FontName="Tahoma" ss:Size="11" ss:Color="#0F172A"/>
+    </Style>
+    <Style ss:ID="Title" ss:Parent="Default">
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/>
+      <Font ss:FontName="Tahoma" ss:Size="16" ss:Bold="1" ss:Color="#FFFFFF"/>
+      <Interior ss:Color="#16A34A" ss:Pattern="Solid"/>
+    </Style>
+    <Style ss:ID="MetaLabel" ss:Parent="Default">
+      <Alignment ss:Horizontal="Left" ss:Vertical="Top" ss:WrapText="0"/>
+      <Font ss:FontName="Tahoma" ss:Size="11" ss:Bold="1" ss:Color="#0F172A"/>
+    </Style>
+    <Style ss:ID="MetaValue" ss:Parent="Default">
+      <Font ss:FontName="Tahoma" ss:Size="11" ss:Bold="1" ss:Color="#0F172A"/>
+    </Style>
+    <Style ss:ID="SectionTitle" ss:Parent="Default">
+      <Font ss:FontName="Tahoma" ss:Size="13" ss:Bold="1" ss:Color="#000000"/>
+    </Style>
+    <Style ss:ID="Header" ss:Parent="Default">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <Font ss:FontName="Tahoma" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
+      <Interior ss:Color="#22C55E" ss:Pattern="Solid"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="Cell" ss:Parent="Default">
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="CenterCell" ss:Parent="Cell">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Top" ss:WrapText="1"/>
+    </Style>
+  </Styles>
+  <Worksheet ss:Name="รายงานหน่วยงาน">
+    <Table>
+      <Column ss:Width="150"/>
+      <Column ss:Width="360"/>
+      <Column ss:Width="110"/>
+      <Column ss:Width="280"/>
+      <Column ss:Width="120"/>
+      <Row ss:Height="26">${renderExcelCell("รายงานผลการประเมินหน่วยงาน", "Title", {
+        mergeAcross: 4,
+      })}</Row>
+      <Row>
+        ${renderExcelCell("หน่วยงาน", "MetaLabel")}
+        ${renderExcelCell(departmentDisplayName, "MetaValue", { mergeAcross: 3 })}
+      </Row>
+      <Row>
+        ${renderExcelCell("แบบประเมิน", "MetaLabel")}
+        ${renderExcelCell(surveyTitle, "MetaValue", { mergeAcross: 3 })}
+      </Row>
+      <Row>
+        ${renderExcelCell("ช่วงรายงาน", "MetaLabel")}
+        ${renderExcelCell(selectedPeriodLabel, "MetaValue", { mergeAcross: 3 })}
+      </Row>
+      <Row>
+        ${renderExcelCell("กลุ่มผู้ทำแบบประเมิน", "MetaLabel")}
+        ${renderExcelCell(selectedRespondentGroupLabel, "MetaValue", {
+          mergeAcross: 3,
+        })}
+      </Row>
+      <Row ss:Height="16" />
+      <Row>
+        ${renderExcelCell("ผลการประเมินจำแนกรายข้อคำถาม", "SectionTitle", {
+          mergeAcross: 4,
+        })}
+      </Row>
+    ${renderQuestionTables(data.questions)}
+    ${commentsSection}
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+      <PageSetup>
+        <Layout x:Orientation="Landscape"/>
+      </PageSetup>
+      <FitToPage/>
+    </WorksheetOptions>
+  </Worksheet>
+</Workbook>`;
+}
+
+function downloadExcelFile(fileName: string, content: string) {
+  const blob = new Blob(["\ufeff", content], {
+    type: "application/vnd.ms-excel;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 function findSelectedWeek(data: ReportData | null) {
   const selectedWeekStart = data?.filters?.selected?.week_start;
   if (!data || !selectedWeekStart) return null;
@@ -406,7 +634,7 @@ function getBand(score: number | null | undefined, bands: RatingBand[]) {
 }
 
 function Kpi({
-  icon: Icon,
+  icon,
   title,
   value,
   tone,
@@ -417,21 +645,7 @@ function Kpi({
   tone: string;
 }) {
   return (
-    <div className="rounded-[24px] border border-slate-200/80 bg-white/95 p-5 shadow-[0_16px_40px_rgba(37,99,235,0.08)]">
-      <div className="flex items-start gap-4">
-        <div
-          className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${tone} text-white shadow-[0_10px_24px_rgba(15,23,42,0.12)]`}
-        >
-          <Icon className="h-6 w-6" />
-        </div>
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-slate-600">{title}</div>
-          <div className="text-2xl font-black tracking-tight text-slate-900">
-            {value}
-          </div>
-        </div>
-      </div>
-    </div>
+    <OverviewCard icon={icon} title={title} value={value} iconClass={tone} />
   );
 }
 
@@ -640,7 +854,7 @@ export default function DashboardReportsPage({
     pageStyle: `
       @page {
         size: A4;
-        margin: 0;
+        margin: 12mm 10mm 10mm;
       }
       @media print {
         html,
@@ -656,9 +870,9 @@ export default function DashboardReportsPage({
         }
         .report-print-page {
           box-sizing: border-box !important;
-          width: 210mm !important;
-          min-height: 297mm !important;
-          padding: 15mm 12mm !important;
+          width: 100% !important;
+          min-height: auto !important;
+          padding: 0 !important;
           background: #ffffff !important;
         }
       }
@@ -667,44 +881,18 @@ export default function DashboardReportsPage({
   const exportExcel = () => {
     if (!data) return;
 
-    const rows = [
-      ["รายงานผลการประเมินหน่วยงาน"],
-      ["หน่วยงาน", departmentDisplayName],
-      ["แบบประเมิน", surveyTitle],
-      ["ช่วงรายงาน", selectedPeriodLabel],
-      ["กลุ่มผู้ทำแบบประเมิน", selectedRespondentGroupLabel],
-      [],
-      ["ข้อ", "คำถาม", "คะแนนเฉลี่ย", "ส่วนเบี่ยงเบนมาตรฐาน"],
-      ...data.questions.map((item, index) => [
-        index + 1,
-        item.question_text,
-        formatScore(item.avg_rating),
-        item.sd === null ? "-" : item.sd.toFixed(2),
-      ]),
-    ];
-
-    if (data.comments.length > 0) {
-      rows.push([]);
-      rows.push(["ความคิดเห็นจากผู้ประเมิน", "", "", "", ""]);
-      rows.push(["ข้อ", "คำถาม", "ประเภทคำถาม", "ความคิดเห็น", "วันที่"]);
-      rows.push(
-        ...data.comments.map((item, index) => [
-          index + 1,
-          item.question_text,
-          formatQuestionScopeLabel(item.question_scope),
-          item.comment,
-          formatDateTime(item.submitted_at),
-        ]),
-      );
-    }
-
-    const worksheet = XLSX.utils.aoa_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Department Reports");
-    XLSX.writeFile(
-      workbook,
-      `รายงานผลการประเมิน_${departmentDisplayName}_${data.survey?.year_be ?? "latest"}.xlsx`,
+    const excelContent = buildDepartmentReportExcelXml({
+      data,
+      departmentDisplayName,
+      surveyTitle,
+      selectedPeriodLabel,
+      selectedRespondentGroupLabel,
+    });
+    const fileName = sanitizeExcelFileName(
+      `ออกรายงานหน่วยงาน_${departmentDisplayName}_${data.survey?.year_be ?? "latest"}.xls`,
     );
+
+    downloadExcelFile(fileName, excelContent);
   };
 
   if (loading && !data) {
@@ -989,7 +1177,7 @@ export default function DashboardReportsPage({
             <div ref={printRef} className="report-print-page bg-white">
               <style>{`
                 @media print {
-                  @page { margin: 0; size: A4; }
+                  @page { margin: 12mm 10mm 10mm; size: A4; }
                   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                   .report-tbl {
                     page-break-inside: auto;
@@ -1027,10 +1215,16 @@ export default function DashboardReportsPage({
                 .report-tbl th, .report-tbl td { border: 1px solid #94a3b8; padding: 5px 10px; font-size: 13px; }
                 .report-tbl th { background-color: #dbeafe; font-weight: 600; color: #1e3a5f; }
                 .report-tbl td { color: #1e293b; }
-                .report-section-title {
-                  font-size: 13px; font-weight: 700; color: #1e293b;
-                  margin-top: 16px; margin-bottom: 4px;
-                }
+                  .report-section-title {
+                    font-size: 13px; font-weight: 700; color: #1e293b;
+                    margin-top: 16px; margin-bottom: 4px;
+                  }
+                  .report-question-title {
+                    font-size: 13px; font-weight: 400; color: #000000;
+                    margin-top: 10px; margin-bottom: 4px;
+                    page-break-after: avoid;
+                    break-after: avoid-page;
+                  }
               `}</style>
 
               <div
@@ -1130,19 +1324,19 @@ export default function DashboardReportsPage({
               <div className="report-section-title">
                 ผลการประเมินจำแนกรายข้อคำถาม
               </div>
-              <table className="report-tbl">
-                <thead>
-                  <tr>
-                    <th style={{ width: "50px", textAlign: "center" }}>ข้อ</th>
-                    <th style={{ textAlign: "center" }}>คำถาม</th>
-                    <th style={{ width: "90px", textAlign: "center" }}>ค่าเฉลี่ย</th>
-                    <th style={{ width: "140px", textAlign: "center" }}>
-                      ส่วนเบี่ยงเบนมาตรฐาน
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.questions.length === 0 ? (
+              {data.questions.length === 0 ? (
+                <table className="report-tbl">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "50px", textAlign: "center" }}>ข้อ</th>
+                      <th style={{ textAlign: "center" }}>คำถาม</th>
+                      <th style={{ width: "90px", textAlign: "center" }}>ค่าเฉลี่ย</th>
+                      <th style={{ width: "140px", textAlign: "center" }}>
+                        ส่วนเบี่ยงเบนมาตรฐาน
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
                     <tr>
                       <td
                         colSpan={4}
@@ -1157,22 +1351,41 @@ export default function DashboardReportsPage({
                           : "ยังไม่มีข้อมูลการประเมินในรายงานนี้"}
                       </td>
                     </tr>
-                  ) : (
-                    data.questions.map((question, index) => (
-                      <tr key={question.question_id}>
-                        <td style={{ textAlign: "center" }}>{index + 1}</td>
-                        <td>{question.question_text}</td>
-                        <td style={{ textAlign: "center", fontWeight: 600 }}>
-                          {formatScore(question.avg_rating)}
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          {question.sd === null ? "-" : question.sd.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              ) : (
+                groupReportQuestions(data.questions).map((group) => (
+                  <div key={`question-scope-${group.scope}`}>
+                    <div className="report-question-title">{group.title}</div>
+                    <table className="report-tbl">
+                      <thead>
+                        <tr>
+                          <th style={{ width: "50px", textAlign: "center" }}>ข้อ</th>
+                          <th style={{ textAlign: "center" }}>คำถาม</th>
+                          <th style={{ width: "90px", textAlign: "center" }}>ค่าเฉลี่ย</th>
+                          <th style={{ width: "140px", textAlign: "center" }}>
+                            ส่วนเบี่ยงเบนมาตรฐาน
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.questions.map((question, index) => (
+                          <tr key={question.question_id}>
+                            <td style={{ textAlign: "center" }}>{index + 1}</td>
+                            <td>{question.question_text}</td>
+                            <td style={{ textAlign: "center", fontWeight: 600 }}>
+                              {formatScore(question.avg_rating)}
+                            </td>
+                            <td style={{ textAlign: "center" }}>
+                              {question.sd === null ? "-" : question.sd.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))
+              )}
 
               {data.comments.length > 0 && (
                 <>

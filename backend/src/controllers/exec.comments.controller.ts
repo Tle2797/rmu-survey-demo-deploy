@@ -55,15 +55,19 @@ export async function getExecComments({ set }: any) {
     SELECT
       d.id AS department_id,
       d.name AS department_name,
+      dg.id AS department_group_id,
+      dg.name AS department_group_name,
+      dg.display_order AS department_group_display_order,
       COALESCE(rs.total_responses, 0) AS total_responses,
       COALESCE(cs.total_comments, 0) AS total_comments,
       rate.avg_rating
     FROM departments d
+    JOIN department_groups dg ON dg.id = d.department_group_id
     LEFT JOIN response_summary rs ON rs.department_id = d.id
     LEFT JOIN comment_summary cs ON cs.department_id = d.id
     LEFT JOIN rating_summary rate ON rate.department_id = d.id
     WHERE d.is_active = true
-    ORDER BY d.name ASC
+    ORDER BY dg.display_order ASC, dg.id ASC, d.name ASC
     `,
     [surveyId],
   );
@@ -121,6 +125,9 @@ export async function getExecComments({ set }: any) {
     departments: departmentsRes.rows.map((row) => ({
       department_id: Number(row.department_id),
       department_name: row.department_name,
+      department_group_id: Number(row.department_group_id),
+      department_group_name: String(row.department_group_name),
+      department_group_display_order: Number(row.department_group_display_order),
       total_responses: Number(row.total_responses ?? 0),
       total_comments: Number(row.total_comments ?? 0),
       avg_rating: row.avg_rating !== null ? Number(row.avg_rating) : null,

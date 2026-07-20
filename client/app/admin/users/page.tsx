@@ -808,23 +808,23 @@ export default function AdminUsersPage() {
         </div>
 
         {/* Table */}
-        <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_18px_50px_rgba(37,99,235,0.08)]">
-          <div className="overflow-hidden">
-            <table className="w-full table-fixed text-[13px]">
-              <thead className="border-b border-blue-700/20 bg-gradient-to-r from-sky-600 to-blue-600 text-white">
-                <tr>
-                  <th className="w-[5%] px-3 py-3 text-center font-semibold">ลำดับ</th>
-                  <th className="w-[14%] px-3 py-3 text-left font-semibold">ตำแหน่ง</th>
-                  <th className="w-[18%] px-3 py-3 text-left font-semibold">หน่วยงาน</th>
-                  <th className="w-[18%] px-3 py-3 text-left font-semibold">ชื่อ นามสกุล</th>
-                  <th className="w-[10%] px-3 py-3 text-left font-semibold">ชื่อผู้ใช้</th>
-                  <th className="w-[18%] px-3 py-3 text-left font-semibold">อีเมล</th>
-                  <th className="w-[7%] px-3 py-3 text-center font-semibold">สถานะ</th>
-                  <th className="w-[10%] px-3 py-3 text-center font-semibold">การทำงาน</th>
+        <div className="overflow-hidden rounded-3xl border border-sky-100 bg-white/95 shadow-[0_20px_55px_rgba(37,99,235,0.10)]">
+          <div className="overflow-x-auto">
+            <table className="min-w-[1180px] w-full table-fixed border-collapse text-[13px]">
+              <thead className="bg-gradient-to-r from-sky-600 via-blue-600 to-blue-700 text-white">
+                <tr className="border-b border-blue-700/30">
+                  <th className="w-[5%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">ลำดับ</th>
+                  <th className="w-[14%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">ตำแหน่ง</th>
+                  <th className="w-[18%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">หน่วยงาน</th>
+                  <th className="w-[18%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">ชื่อ นามสกุล</th>
+                  <th className="w-[10%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">ชื่อผู้ใช้</th>
+                  <th className="w-[18%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">อีเมล</th>
+                  <th className="w-[7%] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">สถานะ</th>
+                  <th className="w-[10%] px-3 py-3.5 text-center text-sm font-bold">การทำงาน</th>
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {filteredUsers.length === 0 ? (
                   <tr>
                     <td className="px-4 py-8 text-center text-slate-500" colSpan={8}>
@@ -835,40 +835,40 @@ export default function AdminUsersPage() {
                   paginatedUsers.map((u, idx) => {
                     const isSelf = currentUserId != null && u.id === currentUserId;
                     return (
-                      <tr key={u.id} className="transition hover:bg-slate-50">
-                        <td className="px-3 py-3 text-center text-slate-500">
+                      <tr key={u.id} className="border-b border-sky-100 transition last:border-b-0 hover:bg-sky-50/50">
+                        <td className="border-r border-sky-100 px-3 py-3.5 text-center text-slate-500">
                           {startItem + idx}
                         </td>
 
-                        <td className="px-3 py-3">
+                        <td className="border-r border-sky-100 px-3 py-3.5">
                           <RoleBadge role={u.role} roleName={u.role_name ?? u.role} />
                         </td>
 
-                        <td className="px-3 py-3 leading-5 text-slate-700">
+                        <td className="border-r border-sky-100 px-3 py-3.5 leading-5 text-slate-700">
                           <span className="block whitespace-normal break-words leading-5" title={u.department_name || undefined}>
                             {u.department_name || "-"}
                           </span>
                         </td>
 
-                        <td className="px-3 py-3 font-medium leading-5 text-slate-900">
+                        <td className="border-r border-sky-100 px-3 py-3.5 font-normal leading-5 text-slate-900">
                           <span className="block truncate" title={formatFullName(u.title, u.first_name, u.last_name)}>
                             {formatFullName(u.title, u.first_name, u.last_name)}
                           </span>
                         </td>
 
-                        <td className="px-3 py-3 text-slate-600">
+                        <td className="border-r border-sky-100 px-3 py-3.5 text-slate-600">
                           <span className="block truncate" title={u.username}>
                             {u.username}
                           </span>
                         </td>
 
-                        <td className="px-3 py-3 text-slate-600">
+                        <td className="border-r border-sky-100 px-3 py-3.5 text-slate-600">
                           <span className="block truncate" title={u.email || "-"}>
                             {u.email || "-"}
                           </span>
                         </td>
 
-                        <td className="px-3 py-3 text-center">
+                        <td className="border-r border-sky-100 px-3 py-3.5 text-center">
                           <div className="flex justify-center">
                             <ToggleSwitch
                               checked={u.is_active}
@@ -896,7 +896,7 @@ export default function AdminUsersPage() {
                           ))}
                         </td>
 
-                        <td className="px-3 py-3 text-center">
+                        <td className="px-3 py-3.5 text-center">
                           <div className="flex items-center justify-center gap-2">
                             <div className="hidden">
                             {false && (
@@ -918,7 +918,7 @@ export default function AdminUsersPage() {
 
                             <button
                               onClick={() => openEdit(u)}
-                              className="rounded-xl border border-amber-500 bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-amber-600 hover:bg-amber-600 disabled:opacity-50"
+                              className="rounded-lg border border-amber-400 bg-gradient-to-b from-amber-400 to-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-amber-500 hover:to-amber-600 disabled:opacity-50"
                               disabled={busy}
                             >
                               แก้ไข
@@ -926,7 +926,7 @@ export default function AdminUsersPage() {
 
                             <button
                               onClick={() => deleteUser(u)}
-                              className="rounded-xl border border-red-500 bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-red-600 hover:bg-red-600 disabled:opacity-50"
+                              className="rounded-lg border border-red-500 bg-gradient-to-b from-red-500 to-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-red-600 hover:to-red-700 disabled:opacity-50"
                               disabled={busy || isSelf}
                               title={isSelf ? "ไม่สามารถลบบัญชีตัวเองได้" : ""}
                             >
@@ -942,24 +942,24 @@ export default function AdminUsersPage() {
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex justify-end border-t border-sky-100 bg-sky-50/30 px-4 py-3">
             <div className="flex items-center gap-2 sm:ml-auto">
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={safeCurrentPage <= 1}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
               >
                 ย้อนกลับ
               </button>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
                 หน้า {safeCurrentPage} / {totalPages}
               </div>
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 disabled={safeCurrentPage >= totalPages}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
               >
                 ถัดไป
               </button>

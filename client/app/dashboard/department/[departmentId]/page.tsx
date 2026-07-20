@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
+import OverviewCard from "@/app/components/overview-card";
 import { apiGet } from "@/lib/api";
 
 type KPI = {
@@ -189,13 +190,12 @@ function resolveOverallLabel(avg: number | null, bands: RatingBand[]) {
 }
 
 function StatCard({
-  icon: Icon,
+  icon,
   label,
   value,
   sub,
   cardClass = "border-slate-200/80 bg-white/95",
   iconClass = "from-sky-500 to-blue-600",
-  valueClass = "text-2xl",
 }: {
   icon: IconType;
   label: string;
@@ -206,28 +206,14 @@ function StatCard({
   valueClass?: string;
 }) {
   return (
-    <div
-      className={`rounded-[24px] border p-4 shadow-[0_14px_30px_rgba(37,99,235,0.07)] transition-transform duration-200 hover:-translate-y-0.5 ${cardClass}`}
-    >
-      <div className="flex items-start gap-3">
-        <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${iconClass} text-white shadow-[0_10px_22px_rgba(15,23,42,0.12)] ring-1 ring-white/30`}
-          aria-hidden="true"
-        >
-          <Icon className="h-5 w-5" />
-        </div>
-
-        <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-            {label}
-          </div>
-          <div className={`mt-1 break-words font-black tracking-tight text-slate-900 ${valueClass}`}>
-            {value}
-          </div>
-          {sub ? <div className="mt-1 text-xs text-slate-500">{sub}</div> : null}
-        </div>
-      </div>
-    </div>
+    <OverviewCard
+      icon={icon}
+      title={label}
+      value={value}
+      sub={sub}
+      cardClass={cardClass}
+      iconClass={iconClass}
+    />
   );
 }
 

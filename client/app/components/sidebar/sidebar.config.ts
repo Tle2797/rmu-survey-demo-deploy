@@ -3,7 +3,6 @@ import {
   BarChart3,
   Building2,
   ClipboardList,
-  Clock3,
   FileSpreadsheet,
   LayoutDashboard,
   ListChecks,
@@ -35,6 +34,12 @@ export const SIDEBAR_MENU: Record<Role, SidebarItem[]> = {
       path: "/admin/dashboard",
       matchPaths: ["/admin/dashboard"],
       icon: LayoutDashboard,
+    },
+    {
+      label: "ผลการประเมิน",
+      path: "/admin/evaluation-results",
+      matchPaths: ["/admin/evaluation-results"],
+      icon: BarChart3,
     },
     {
       label: "จัดการผู้ใช้งาน",
@@ -73,12 +78,12 @@ export const SIDEBAR_MENU: Record<Role, SidebarItem[]> = {
       matchPaths: ["/admin/questions/departments"],
       icon: Building2,
     },
-    {
-      label: "จัดการช่วงเวลา",
-      path: "/admin/time-slots",
-      matchPaths: ["/admin/time-slots"],
-      icon: Clock3,
-    },
+    // {
+    //   label: "จัดการช่วงเวลา",
+    //   path: "/admin/time-slots",
+    //   matchPaths: ["/admin/time-slots"],
+    //   icon: Clock3,
+    // },
     {
       label: "จัดการคิวอาร์โค้ด",
       path: "/admin/qrcodes",
@@ -154,7 +159,7 @@ export const SIDEBAR_MENU: Record<Role, SidebarItem[]> = {
       icon: BarChart3,
     },
     {
-      label: "รายงานผลการประเมิน",
+      label: "ออกรายงานหน่วยงาน",
       path: "/dashboard/reports",
       matchPaths: ["/dashboard/reports"],
       icon: FileSpreadsheet,
@@ -195,7 +200,7 @@ export const SIDEBAR_MENU: Record<Role, SidebarItem[]> = {
       icon: BarChart3,
     },
     {
-      label: "รายงานและการส่งออก",
+      label: "ออกรายงานหน่วยงาน",
       path: "/dashboard/reports",
       matchPaths: ["/dashboard/reports"],
       icon: FileSpreadsheet,

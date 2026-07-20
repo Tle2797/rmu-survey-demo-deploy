@@ -63,6 +63,34 @@ function getClippedWeekEnd(weekStartText: string, month: number | null) {
 
 export async function getExecReports({ query, set }: any) {
   const activeSurvey = await getActiveSurvey();
+  const departmentGroupsRes = await db.query(
+    `
+    SELECT id, name, display_order
+    FROM department_groups
+    WHERE is_active = true
+    ORDER BY display_order ASC, id ASC
+    `,
+  );
+
+  const selectedDepartmentGroupId = parsePositiveInt(query?.departmentGroupId);
+  if (
+    query?.departmentGroupId !== undefined &&
+    selectedDepartmentGroupId === null
+  ) {
+    set.status = 400;
+    return { message: "Invalid departmentGroupId" };
+  }
+
+  const selectedDepartmentGroup = selectedDepartmentGroupId
+    ? departmentGroupsRes.rows.find(
+        (group) => Number(group.id) === selectedDepartmentGroupId,
+      ) ?? null
+    : null;
+
+  if (selectedDepartmentGroupId && !selectedDepartmentGroup) {
+    set.status = 400;
+    return { message: "Department group not found or inactive" };
+  }
 
   const availableSurveysRes = await db.query(
     `
@@ -174,6 +202,18 @@ export async function getExecReports({ query, set }: any) {
 
   let filterClause = " AND r.survey_id = $1";
   const filterParams: Array<number | string> = [Number(selectedSurvey.id)];
+  let departmentGroupParamIndex: number | null = null;
+
+  if (selectedDepartmentGroupId) {
+    departmentGroupParamIndex = filterParams.length + 1;
+    filterClause += ` AND EXISTS (
+      SELECT 1
+      FROM departments filter_department
+      WHERE filter_department.id = r.department_id
+        AND filter_department.department_group_id = $${departmentGroupParamIndex}
+    )`;
+    filterParams.push(selectedDepartmentGroupId);
+  }
 
   if (respondentGroup) {
     filterClause += ` AND r.respondent_group = $${filterParams.length + 1}`;
@@ -257,16 +297,26 @@ export async function getExecReports({ query, set }: any) {
     SELECT
       d.id AS department_id,
       d.name AS department_name,
+      dg.id AS department_group_id,
+      dg.name AS department_group_name,
+      dg.display_order AS department_group_display_order,
       COALESCE(rc.total_responses, 0)::int AS total_responses,
       COALESCE(rc.student_count, 0)::int AS student_count,
       COALESCE(rc.staff_count, 0)::int AS staff_count,
       COALESCE(rc.public_count, 0)::int AS public_count,
       ra.avg_rating
     FROM departments d
+    JOIN department_groups dg ON dg.id = d.department_group_id
     LEFT JOIN response_counts rc ON rc.department_id = d.id
     LEFT JOIN rating_avgs ra ON ra.department_id = d.id
     WHERE d.is_active = true
-    ORDER BY ra.avg_rating DESC NULLS LAST, COALESCE(rc.total_responses, 0) DESC, d.name ASC
+      ${departmentGroupParamIndex ? `AND dg.id = $${departmentGroupParamIndex}` : ""}
+    ORDER BY
+      dg.display_order ASC,
+      dg.id ASC,
+      ra.avg_rating DESC NULLS LAST,
+      COALESCE(rc.total_responses, 0) DESC,
+      d.name ASC
     `,
     filterParams,
   );
@@ -315,6 +365,9 @@ export async function getExecReports({ query, set }: any) {
     )
     SELECT
       d.name AS department_name,
+      dg.id AS department_group_id,
+      dg.name AS department_group_name,
+      dg.display_order AS department_group_display_order,
       a.id AS answer_id,
       q.id AS question_id,
       q.text AS question_text,
@@ -324,18 +377,32 @@ export async function getExecReports({ query, set }: any) {
       fr.submitted_at
     FROM filtered_responses fr
     JOIN departments d ON d.id = fr.department_id
+    JOIN department_groups dg ON dg.id = d.department_group_id
     JOIN answers a ON a.response_id = fr.id
     JOIN questions q ON q.id = a.question_id
     WHERE q.type = 'text'
       AND a.comment IS NOT NULL
       AND btrim(a.comment) <> ''
-    ORDER BY fr.submitted_at DESC, a.id DESC
+    ORDER BY
+      dg.display_order ASC,
+      dg.id ASC,
+      fr.submitted_at DESC,
+      a.id DESC
     `,
     filterParams,
   );
 
   let monthsOptionClause = "WHERE r.survey_id = $1";
   const monthsOptionParams: Array<number | string> = [Number(selectedSurvey.id)];
+  if (selectedDepartmentGroupId) {
+    monthsOptionClause += ` AND EXISTS (
+      SELECT 1
+      FROM departments filter_department
+      WHERE filter_department.id = r.department_id
+        AND filter_department.department_group_id = $${monthsOptionParams.length + 1}
+    )`;
+    monthsOptionParams.push(selectedDepartmentGroupId);
+  }
   if (respondentGroup) {
     monthsOptionClause += ` AND r.respondent_group = $${monthsOptionParams.length + 1}`;
     monthsOptionParams.push(respondentGroup);
@@ -353,6 +420,15 @@ export async function getExecReports({ query, set }: any) {
 
   let periodOptionClause = "WHERE r.survey_id = $1";
   const periodOptionParams: Array<number | string> = [Number(selectedSurvey.id)];
+  if (selectedDepartmentGroupId) {
+    periodOptionClause += ` AND EXISTS (
+      SELECT 1
+      FROM departments filter_department
+      WHERE filter_department.id = r.department_id
+        AND filter_department.department_group_id = $${periodOptionParams.length + 1}
+    )`;
+    periodOptionParams.push(selectedDepartmentGroupId);
+  }
   if (respondentGroup) {
     periodOptionClause += ` AND r.respondent_group = $${periodOptionParams.length + 1}`;
     periodOptionParams.push(respondentGroup);
@@ -410,15 +486,29 @@ export async function getExecReports({ query, set }: any) {
     dayOptionParams,
   );
 
+  const respondentGroupParams: Array<number> = [Number(selectedSurvey.id)];
+  const respondentGroupDepartmentClause = selectedDepartmentGroupId
+    ? `AND EXISTS (
+        SELECT 1
+        FROM departments filter_department
+        WHERE filter_department.id = r.department_id
+          AND filter_department.department_group_id = $2
+      )`
+    : "";
+  if (selectedDepartmentGroupId) {
+    respondentGroupParams.push(selectedDepartmentGroupId);
+  }
+
   const respondentGroupsRes = await db.query(
     `
     SELECT respondent_group AS value, COUNT(*)::int AS count
     FROM responses r
     WHERE r.survey_id = $1
+      ${respondentGroupDepartmentClause}
     GROUP BY respondent_group
     ORDER BY respondent_group ASC
     `,
-    [Number(selectedSurvey.id)],
+    respondentGroupParams,
   );
 
   const bandsRes = await db.query(`
@@ -430,6 +520,9 @@ export async function getExecReports({ query, set }: any) {
   const departments = departmentsRes.rows.map((row) => ({
     department_id: Number(row.department_id),
     department_name: String(row.department_name),
+    department_group_id: Number(row.department_group_id),
+    department_group_name: String(row.department_group_name),
+    department_group_display_order: Number(row.department_group_display_order),
     total_responses: Number(row.total_responses || 0),
     student_count: Number(row.student_count || 0),
     staff_count: Number(row.staff_count || 0),
@@ -479,6 +572,11 @@ export async function getExecReports({ query, set }: any) {
     })),
     comments: commentsRes.rows.map((comment) => ({
       department_name: comment.department_name,
+      department_group_id: Number(comment.department_group_id),
+      department_group_name: String(comment.department_group_name),
+      department_group_display_order: Number(
+        comment.department_group_display_order,
+      ),
       answer_id: Number(comment.answer_id),
       question_id: Number(comment.question_id),
       question_text: comment.question_text,
@@ -502,6 +600,11 @@ export async function getExecReports({ query, set }: any) {
       months: monthsRes.rows.map((row) => Number(row.month)),
       weeks: weeksRes.rows,
       days: daysRes.rows.map((row) => row.date),
+      department_groups: departmentGroupsRes.rows.map((group) => ({
+        id: Number(group.id),
+        name: String(group.name),
+        display_order: Number(group.display_order),
+      })),
       respondent_groups: respondentGroupsRes.rows.map((row) => ({
         value: row.value,
         count: Number(row.count || 0),
@@ -515,6 +618,7 @@ export async function getExecReports({ query, set }: any) {
         week_start: selectedWeekStart,
         date: selectedDate,
         respondent_group: respondentGroup,
+        department_group_id: selectedDepartmentGroupId,
       },
     },
   };

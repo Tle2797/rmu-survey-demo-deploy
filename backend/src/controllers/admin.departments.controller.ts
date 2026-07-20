@@ -73,18 +73,56 @@ async function findDepartmentByName(
   return res.rows[0] ?? null;
 }
 
+async function findActiveDepartmentGroup(
+  client: Pick<typeof db, "query">,
+  departmentGroupId: number,
+) {
+  const res = await client.query(
+    `
+    SELECT id
+    FROM department_groups
+    WHERE id = $1
+      AND is_active = true
+    LIMIT 1
+    `,
+    [departmentGroupId],
+  );
+
+  return res.rows[0] ?? null;
+}
+
 export async function listAdminDepartments({ query }: any) {
   const includeQr = query.include_qr === "1";
+  const groupsRes = await db.query(
+    `
+    SELECT id, name, display_order, is_active
+    FROM department_groups
+    ORDER BY display_order ASC, id ASC
+    `,
+  );
 
   if (!includeQr) {
     const res = await db.query(
       `
-      SELECT id, name, is_active, created_at, updated_at
-      FROM departments
-      ORDER BY created_at DESC, id DESC
+      SELECT
+        d.id,
+        d.name,
+        d.is_active,
+        d.created_at,
+        d.updated_at,
+        dg.id AS department_group_id,
+        dg.name AS department_group_name,
+        dg.display_order AS department_group_display_order
+      FROM departments d
+      JOIN department_groups dg ON dg.id = d.department_group_id
+      ORDER BY dg.display_order ASC, dg.id ASC, d.created_at ASC, d.id ASC
       `,
     );
-    return { total: res.rowCount ?? 0, items: res.rows };
+    return {
+      total: res.rowCount ?? 0,
+      items: res.rows,
+      groups: groupsRes.rows,
+    };
   }
 
   const res = await db.query(
@@ -95,19 +133,27 @@ export async function listAdminDepartments({ query }: any) {
       d.is_active,
       d.created_at,
       d.updated_at,
+      dg.id AS department_group_id,
+      dg.name AS department_group_name,
+      dg.display_order AS department_group_display_order,
       q.id AS qrcode_id,
       q.image_path AS qr_image_path,
       q.link_target AS qr_link_target,
       q.created_at AS qr_created_at
     FROM departments d
+    JOIN department_groups dg ON dg.id = d.department_group_id
     LEFT JOIN qrcodes q
       ON q.department_id = d.id
      AND q.type = 'department'
-    ORDER BY d.created_at DESC, d.id DESC
+    ORDER BY dg.display_order ASC, dg.id ASC, d.created_at ASC, d.id ASC
     `,
   );
 
-  return { total: res.rowCount ?? 0, items: res.rows };
+  return {
+    total: res.rowCount ?? 0,
+    items: res.rows,
+    groups: groupsRes.rows,
+  };
 }
 
 export async function createAdminDepartment({ body, set }: any) {
@@ -115,6 +161,12 @@ export async function createAdminDepartment({ body, set }: any) {
   if (!name) {
     set.status = 400;
     return { message: "Name is required" };
+  }
+
+  const departmentGroupId = Number(body.department_group_id);
+  if (!Number.isInteger(departmentGroupId) || departmentGroupId <= 0) {
+    set.status = 400;
+    return { message: "Department group is required" };
   }
 
   const client = await db.connect();
@@ -130,13 +182,23 @@ export async function createAdminDepartment({ body, set }: any) {
       return { message: "มีชื่อหน่วยงานนี้อยู่ในระบบแล้ว" };
     }
 
+    const departmentGroup = await findActiveDepartmentGroup(
+      client,
+      departmentGroupId,
+    );
+    if (!departmentGroup) {
+      await client.query("ROLLBACK");
+      set.status = 400;
+      return { message: "Department group is invalid or inactive" };
+    }
+
     const ins = await client.query(
       `
-      INSERT INTO departments(name, is_active)
-      VALUES ($1, true)
-      RETURNING id, name, is_active, created_at, updated_at
+      INSERT INTO departments(name, department_group_id, is_active)
+      VALUES ($1, $2, true)
+      RETURNING id, name, department_group_id, is_active, created_at, updated_at
       `,
-      [name],
+      [name, departmentGroupId],
     );
 
     const department = ins.rows[0];
@@ -190,6 +252,18 @@ export async function updateAdminDepartment({ params, body, set }: any) {
     return { message: "Name is required" };
   }
 
+  const departmentGroupId = Number(body.department_group_id);
+  if (!Number.isInteger(departmentGroupId) || departmentGroupId <= 0) {
+    set.status = 400;
+    return { message: "Department group is required" };
+  }
+
+  const departmentGroup = await findActiveDepartmentGroup(db, departmentGroupId);
+  if (!departmentGroup) {
+    set.status = 400;
+    return { message: "Department group is invalid or inactive" };
+  }
+
   const duplicateDepartment = await findDepartmentByName(db, name, id);
   if (duplicateDepartment) {
     set.status = 409;
@@ -199,11 +273,11 @@ export async function updateAdminDepartment({ params, body, set }: any) {
   const upd = await db.query(
     `
     UPDATE departments
-    SET name = $2, updated_at = NOW()
+    SET name = $2, department_group_id = $3, updated_at = NOW()
     WHERE id = $1
-    RETURNING id, name, is_active, created_at, updated_at
+    RETURNING id, name, department_group_id, is_active, created_at, updated_at
     `,
-    [id, name],
+    [id, name, departmentGroupId],
   );
 
   if ((upd.rowCount ?? 0) === 0) {

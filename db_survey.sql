@@ -2,10 +2,12 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 17.5
--- Dumped by pg_dump version 17.5
+\restrict N9WiTRCRmzsvPigZzBtEzeU1k0XctIGPpkKa8TTWavsJnNhhrOkero62b7mU3va
 
--- Started on 2026-05-01 23:27:31
+-- Dumped from database version 17.9
+-- Dumped by pg_dump version 17.9
+
+-- Started on 2026-07-18 15:26:02
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -20,8 +22,8 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- TOC entry 881 (class 1247 OID 42536)
--- Name: qrcode_type; Type: TYPE; Schema: public; Owner: postgres
+-- TOC entry 885 (class 1247 OID 42536)
+-- Name: qrcode_type; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.qrcode_type AS ENUM (
@@ -30,11 +32,9 @@ CREATE TYPE public.qrcode_type AS ENUM (
 );
 
 
-ALTER TYPE public.qrcode_type OWNER TO postgres;
-
 --
--- TOC entry 875 (class 1247 OID 42522)
--- Name: question_scope; Type: TYPE; Schema: public; Owner: postgres
+-- TOC entry 879 (class 1247 OID 42522)
+-- Name: question_scope; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.question_scope AS ENUM (
@@ -43,11 +43,9 @@ CREATE TYPE public.question_scope AS ENUM (
 );
 
 
-ALTER TYPE public.question_scope OWNER TO postgres;
-
 --
--- TOC entry 872 (class 1247 OID 42516)
--- Name: question_type; Type: TYPE; Schema: public; Owner: postgres
+-- TOC entry 876 (class 1247 OID 42516)
+-- Name: question_type; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.question_type AS ENUM (
@@ -56,11 +54,9 @@ CREATE TYPE public.question_type AS ENUM (
 );
 
 
-ALTER TYPE public.question_type OWNER TO postgres;
-
 --
--- TOC entry 878 (class 1247 OID 42528)
--- Name: respondent_group; Type: TYPE; Schema: public; Owner: postgres
+-- TOC entry 882 (class 1247 OID 42528)
+-- Name: respondent_group; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.respondent_group AS ENUM (
@@ -70,11 +66,9 @@ CREATE TYPE public.respondent_group AS ENUM (
 );
 
 
-ALTER TYPE public.respondent_group OWNER TO postgres;
-
 --
--- TOC entry 869 (class 1247 OID 42506)
--- Name: role_code; Type: TYPE; Schema: public; Owner: postgres
+-- TOC entry 873 (class 1247 OID 42506)
+-- Name: role_code; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.role_code AS ENUM (
@@ -85,15 +79,11 @@ CREATE TYPE public.role_code AS ENUM (
 );
 
 
-ALTER TYPE public.role_code OWNER TO postgres;
-
-SET default_tablespace = '';
-
 SET default_table_access_method = heap;
 
 --
 -- TOC entry 234 (class 1259 OID 42710)
--- Name: answers; Type: TABLE; Schema: public; Owner: postgres
+-- Name: answers; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.answers (
@@ -107,11 +97,9 @@ CREATE TABLE public.answers (
 );
 
 
-ALTER TABLE public.answers OWNER TO postgres;
-
 --
 -- TOC entry 233 (class 1259 OID 42709)
--- Name: answers_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: answers_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.answers ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -125,8 +113,64 @@ ALTER TABLE public.answers ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- TOC entry 242 (class 1259 OID 42975)
+-- Name: department_central_question_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.department_central_question_settings (
+    department_id bigint NOT NULL,
+    survey_id bigint NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- TOC entry 241 (class 1259 OID 42958)
+-- Name: department_central_questions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.department_central_questions (
+    department_id bigint NOT NULL,
+    question_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- TOC entry 244 (class 1259 OID 43070)
+-- Name: department_groups; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.department_groups (
+    id bigint NOT NULL,
+    name text NOT NULL,
+    display_order integer DEFAULT 0 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- TOC entry 243 (class 1259 OID 43069)
+-- Name: department_groups_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.department_groups ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.department_groups_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- TOC entry 218 (class 1259 OID 42542)
--- Name: departments; Type: TABLE; Schema: public; Owner: postgres
+-- Name: departments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.departments (
@@ -134,15 +178,14 @@ CREATE TABLE public.departments (
     name text NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    department_group_id bigint
 );
 
 
-ALTER TABLE public.departments OWNER TO postgres;
-
 --
 -- TOC entry 217 (class 1259 OID 42541)
--- Name: departments_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: departments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.departments ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -157,7 +200,7 @@ ALTER TABLE public.departments ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY 
 
 --
 -- TOC entry 240 (class 1259 OID 42936)
--- Name: password_reset_otps; Type: TABLE; Schema: public; Owner: postgres
+-- Name: password_reset_otps; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.password_reset_otps (
@@ -174,11 +217,9 @@ CREATE TABLE public.password_reset_otps (
 );
 
 
-ALTER TABLE public.password_reset_otps OWNER TO postgres;
-
 --
 -- TOC entry 239 (class 1259 OID 42935)
--- Name: password_reset_otps_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: password_reset_otps_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.password_reset_otps ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -193,7 +234,7 @@ ALTER TABLE public.password_reset_otps ALTER COLUMN id ADD GENERATED ALWAYS AS I
 
 --
 -- TOC entry 236 (class 1259 OID 42734)
--- Name: qrcodes; Type: TABLE; Schema: public; Owner: postgres
+-- Name: qrcodes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.qrcodes (
@@ -208,11 +249,9 @@ CREATE TABLE public.qrcodes (
 );
 
 
-ALTER TABLE public.qrcodes OWNER TO postgres;
-
 --
 -- TOC entry 235 (class 1259 OID 42733)
--- Name: qrcodes_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: qrcodes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.qrcodes ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -227,7 +266,7 @@ ALTER TABLE public.qrcodes ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 --
 -- TOC entry 228 (class 1259 OID 42634)
--- Name: questions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: questions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.questions (
@@ -246,11 +285,9 @@ CREATE TABLE public.questions (
 );
 
 
-ALTER TABLE public.questions OWNER TO postgres;
-
 --
 -- TOC entry 227 (class 1259 OID 42633)
--- Name: questions_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: questions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.questions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -265,7 +302,7 @@ ALTER TABLE public.questions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 --
 -- TOC entry 238 (class 1259 OID 42752)
--- Name: rating_bands; Type: TABLE; Schema: public; Owner: postgres
+-- Name: rating_bands; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.rating_bands (
@@ -278,11 +315,9 @@ CREATE TABLE public.rating_bands (
 );
 
 
-ALTER TABLE public.rating_bands OWNER TO postgres;
-
 --
 -- TOC entry 237 (class 1259 OID 42751)
--- Name: rating_bands_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: rating_bands_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.rating_bands ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -297,7 +332,7 @@ ALTER TABLE public.rating_bands ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY
 
 --
 -- TOC entry 230 (class 1259 OID 42666)
--- Name: respondent_tokens; Type: TABLE; Schema: public; Owner: postgres
+-- Name: respondent_tokens; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.respondent_tokens (
@@ -308,11 +343,9 @@ CREATE TABLE public.respondent_tokens (
 );
 
 
-ALTER TABLE public.respondent_tokens OWNER TO postgres;
-
 --
 -- TOC entry 229 (class 1259 OID 42665)
--- Name: respondent_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: respondent_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.respondent_tokens ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -327,7 +360,7 @@ ALTER TABLE public.respondent_tokens ALTER COLUMN id ADD GENERATED ALWAYS AS IDE
 
 --
 -- TOC entry 232 (class 1259 OID 42677)
--- Name: responses; Type: TABLE; Schema: public; Owner: postgres
+-- Name: responses; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.responses (
@@ -342,11 +375,9 @@ CREATE TABLE public.responses (
 );
 
 
-ALTER TABLE public.responses OWNER TO postgres;
-
 --
 -- TOC entry 231 (class 1259 OID 42676)
--- Name: responses_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: responses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.responses ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -361,7 +392,7 @@ ALTER TABLE public.responses ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 --
 -- TOC entry 219 (class 1259 OID 42553)
--- Name: roles; Type: TABLE; Schema: public; Owner: postgres
+-- Name: roles; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.roles (
@@ -370,11 +401,9 @@ CREATE TABLE public.roles (
 );
 
 
-ALTER TABLE public.roles OWNER TO postgres;
-
 --
 -- TOC entry 226 (class 1259 OID 42618)
--- Name: survey_time_slots; Type: TABLE; Schema: public; Owner: postgres
+-- Name: survey_time_slots; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.survey_time_slots (
@@ -383,11 +412,9 @@ CREATE TABLE public.survey_time_slots (
 );
 
 
-ALTER TABLE public.survey_time_slots OWNER TO postgres;
-
 --
 -- TOC entry 223 (class 1259 OID 42586)
--- Name: surveys; Type: TABLE; Schema: public; Owner: postgres
+-- Name: surveys; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.surveys (
@@ -404,11 +431,9 @@ CREATE TABLE public.surveys (
 );
 
 
-ALTER TABLE public.surveys OWNER TO postgres;
-
 --
 -- TOC entry 222 (class 1259 OID 42585)
--- Name: surveys_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: surveys_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.surveys ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -423,7 +448,7 @@ ALTER TABLE public.surveys ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 --
 -- TOC entry 225 (class 1259 OID 42605)
--- Name: time_slots; Type: TABLE; Schema: public; Owner: postgres
+-- Name: time_slots; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.time_slots (
@@ -440,11 +465,9 @@ CREATE TABLE public.time_slots (
 );
 
 
-ALTER TABLE public.time_slots OWNER TO postgres;
-
 --
 -- TOC entry 224 (class 1259 OID 42604)
--- Name: time_slots_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: time_slots_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.time_slots ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -459,7 +482,7 @@ ALTER TABLE public.time_slots ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 --
 -- TOC entry 221 (class 1259 OID 42561)
--- Name: users; Type: TABLE; Schema: public; Owner: postgres
+-- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.users (
@@ -488,11 +511,9 @@ CREATE TABLE public.users (
 );
 
 
-ALTER TABLE public.users OWNER TO postgres;
-
 --
 -- TOC entry 220 (class 1259 OID 42560)
--- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.users ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -506,8 +527,8 @@ ALTER TABLE public.users ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
--- TOC entry 4890 (class 2606 OID 42718)
--- Name: answers answers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4912 (class 2606 OID 42718)
+-- Name: answers answers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.answers
@@ -515,8 +536,35 @@ ALTER TABLE ONLY public.answers
 
 
 --
--- TOC entry 4850 (class 2606 OID 42551)
--- Name: departments departments_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4933 (class 2606 OID 42982)
+-- Name: department_central_question_settings department_central_question_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.department_central_question_settings
+    ADD CONSTRAINT department_central_question_settings_pkey PRIMARY KEY (department_id, survey_id);
+
+
+--
+-- TOC entry 4930 (class 2606 OID 42963)
+-- Name: department_central_questions department_central_questions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.department_central_questions
+    ADD CONSTRAINT department_central_questions_pkey PRIMARY KEY (department_id, question_id);
+
+
+--
+-- TOC entry 4936 (class 2606 OID 43080)
+-- Name: department_groups department_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.department_groups
+    ADD CONSTRAINT department_groups_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4871 (class 2606 OID 42551)
+-- Name: departments departments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.departments
@@ -524,8 +572,8 @@ ALTER TABLE ONLY public.departments
 
 
 --
--- TOC entry 4906 (class 2606 OID 42944)
--- Name: password_reset_otps password_reset_otps_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4928 (class 2606 OID 42944)
+-- Name: password_reset_otps password_reset_otps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.password_reset_otps
@@ -533,8 +581,8 @@ ALTER TABLE ONLY public.password_reset_otps
 
 
 --
--- TOC entry 4896 (class 2606 OID 42743)
--- Name: qrcodes qrcodes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4918 (class 2606 OID 42743)
+-- Name: qrcodes qrcodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.qrcodes
@@ -542,8 +590,8 @@ ALTER TABLE ONLY public.qrcodes
 
 
 --
--- TOC entry 4878 (class 2606 OID 42645)
--- Name: questions questions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4900 (class 2606 OID 42645)
+-- Name: questions questions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.questions
@@ -551,8 +599,8 @@ ALTER TABLE ONLY public.questions
 
 
 --
--- TOC entry 4900 (class 2606 OID 42759)
--- Name: rating_bands rating_bands_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4922 (class 2606 OID 42759)
+-- Name: rating_bands rating_bands_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.rating_bands
@@ -560,8 +608,8 @@ ALTER TABLE ONLY public.rating_bands
 
 
 --
--- TOC entry 4880 (class 2606 OID 42673)
--- Name: respondent_tokens respondent_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4902 (class 2606 OID 42673)
+-- Name: respondent_tokens respondent_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.respondent_tokens
@@ -569,8 +617,8 @@ ALTER TABLE ONLY public.respondent_tokens
 
 
 --
--- TOC entry 4882 (class 2606 OID 42675)
--- Name: respondent_tokens respondent_tokens_token_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4904 (class 2606 OID 42675)
+-- Name: respondent_tokens respondent_tokens_token_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.respondent_tokens
@@ -578,8 +626,8 @@ ALTER TABLE ONLY public.respondent_tokens
 
 
 --
--- TOC entry 4888 (class 2606 OID 42682)
--- Name: responses responses_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4910 (class 2606 OID 42682)
+-- Name: responses responses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.responses
@@ -587,8 +635,8 @@ ALTER TABLE ONLY public.responses
 
 
 --
--- TOC entry 4853 (class 2606 OID 42559)
--- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4875 (class 2606 OID 42559)
+-- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles
@@ -596,8 +644,8 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- TOC entry 4872 (class 2606 OID 42622)
--- Name: survey_time_slots survey_time_slots_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4894 (class 2606 OID 42622)
+-- Name: survey_time_slots survey_time_slots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.survey_time_slots
@@ -605,8 +653,8 @@ ALTER TABLE ONLY public.survey_time_slots
 
 
 --
--- TOC entry 4866 (class 2606 OID 42595)
--- Name: surveys surveys_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4888 (class 2606 OID 42595)
+-- Name: surveys surveys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.surveys
@@ -614,8 +662,8 @@ ALTER TABLE ONLY public.surveys
 
 
 --
--- TOC entry 4870 (class 2606 OID 42617)
--- Name: time_slots time_slots_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4892 (class 2606 OID 42617)
+-- Name: time_slots time_slots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.time_slots
@@ -623,8 +671,8 @@ ALTER TABLE ONLY public.time_slots
 
 
 --
--- TOC entry 4894 (class 2606 OID 42720)
--- Name: answers uq_answer_once; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4916 (class 2606 OID 42720)
+-- Name: answers uq_answer_once; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.answers
@@ -632,8 +680,8 @@ ALTER TABLE ONLY public.answers
 
 
 --
--- TOC entry 4902 (class 2606 OID 42761)
--- Name: rating_bands uq_band; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4924 (class 2606 OID 42761)
+-- Name: rating_bands uq_band; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.rating_bands
@@ -641,8 +689,8 @@ ALTER TABLE ONLY public.rating_bands
 
 
 --
--- TOC entry 4868 (class 2606 OID 42597)
--- Name: surveys uq_surveys_year; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4890 (class 2606 OID 42597)
+-- Name: surveys uq_surveys_year; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.surveys
@@ -650,8 +698,8 @@ ALTER TABLE ONLY public.surveys
 
 
 --
--- TOC entry 4859 (class 2606 OID 42934)
--- Name: users users_email_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4881 (class 2606 OID 42934)
+-- Name: users users_email_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -659,8 +707,8 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 4861 (class 2606 OID 42570)
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4883 (class 2606 OID 42570)
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -668,8 +716,8 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 4863 (class 2606 OID 42572)
--- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4885 (class 2606 OID 42572)
+-- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -677,168 +725,200 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 4891 (class 1259 OID 42731)
--- Name: idx_answers_question; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4913 (class 1259 OID 42731)
+-- Name: idx_answers_question; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_answers_question ON public.answers USING btree (question_id);
 
 
 --
--- TOC entry 4892 (class 1259 OID 42732)
--- Name: idx_answers_response; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4914 (class 1259 OID 42732)
+-- Name: idx_answers_response; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_answers_response ON public.answers USING btree (response_id);
 
 
 --
--- TOC entry 4851 (class 1259 OID 42552)
--- Name: idx_departments_active; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4934 (class 1259 OID 42993)
+-- Name: idx_department_central_question_settings_survey; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_department_central_question_settings_survey ON public.department_central_question_settings USING btree (survey_id);
+
+
+--
+-- TOC entry 4931 (class 1259 OID 42974)
+-- Name: idx_department_central_questions_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_department_central_questions_question ON public.department_central_questions USING btree (question_id);
+
+
+--
+-- TOC entry 4872 (class 1259 OID 42552)
+-- Name: idx_departments_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_departments_active ON public.departments USING btree (is_active);
 
 
 --
--- TOC entry 4903 (class 1259 OID 42950)
--- Name: idx_password_reset_otps_email; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4873 (class 1259 OID 43087)
+-- Name: idx_departments_department_group; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_departments_department_group ON public.departments USING btree (department_group_id);
+
+
+--
+-- TOC entry 4925 (class 1259 OID 42950)
+-- Name: idx_password_reset_otps_email; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_password_reset_otps_email ON public.password_reset_otps USING btree (email);
 
 
 --
--- TOC entry 4904 (class 1259 OID 42951)
--- Name: idx_password_reset_otps_reset_token_hash; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4926 (class 1259 OID 42951)
+-- Name: idx_password_reset_otps_reset_token_hash; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_password_reset_otps_reset_token_hash ON public.password_reset_otps USING btree (reset_token_hash);
 
 
 --
--- TOC entry 4873 (class 1259 OID 42663)
--- Name: idx_questions_dept; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4895 (class 1259 OID 42663)
+-- Name: idx_questions_dept; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_questions_dept ON public.questions USING btree (department_id);
 
 
 --
--- TOC entry 4874 (class 1259 OID 42664)
--- Name: idx_questions_order; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4896 (class 1259 OID 42664)
+-- Name: idx_questions_order; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_questions_order ON public.questions USING btree (survey_id, display_order);
 
 
 --
--- TOC entry 4875 (class 1259 OID 42662)
--- Name: idx_questions_scope; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4897 (class 1259 OID 42662)
+-- Name: idx_questions_scope; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_questions_scope ON public.questions USING btree (scope);
 
 
 --
--- TOC entry 4876 (class 1259 OID 42661)
--- Name: idx_questions_survey; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4898 (class 1259 OID 42661)
+-- Name: idx_questions_survey; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_questions_survey ON public.questions USING btree (survey_id);
 
 
 --
--- TOC entry 4883 (class 1259 OID 42706)
--- Name: idx_responses_date; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4905 (class 1259 OID 42706)
+-- Name: idx_responses_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_responses_date ON public.responses USING btree (responded_date);
 
 
 --
--- TOC entry 4884 (class 1259 OID 42707)
--- Name: idx_responses_group; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4906 (class 1259 OID 42707)
+-- Name: idx_responses_group; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_responses_group ON public.responses USING btree (respondent_group);
 
 
 --
--- TOC entry 4885 (class 1259 OID 42708)
--- Name: idx_responses_slot; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4907 (class 1259 OID 42708)
+-- Name: idx_responses_slot; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_responses_slot ON public.responses USING btree (slot_id);
 
 
 --
--- TOC entry 4886 (class 1259 OID 42705)
--- Name: idx_responses_survey_dept; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4908 (class 1259 OID 42705)
+-- Name: idx_responses_survey_dept; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_responses_survey_dept ON public.responses USING btree (survey_id, department_id);
 
 
 --
--- TOC entry 4864 (class 1259 OID 42603)
--- Name: idx_surveys_active; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4886 (class 1259 OID 42603)
+-- Name: idx_surveys_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_surveys_active ON public.surveys USING btree (is_active);
 
 
 --
--- TOC entry 4854 (class 1259 OID 42956)
--- Name: idx_users_approval_status; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4876 (class 1259 OID 42956)
+-- Name: idx_users_approval_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_users_approval_status ON public.users USING btree (approval_status);
 
 
 --
--- TOC entry 4855 (class 1259 OID 42584)
--- Name: idx_users_department; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4877 (class 1259 OID 42584)
+-- Name: idx_users_department; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_users_department ON public.users USING btree (department_id);
 
 
 --
--- TOC entry 4856 (class 1259 OID 42957)
--- Name: idx_users_registration_source; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4878 (class 1259 OID 42957)
+-- Name: idx_users_registration_source; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_users_registration_source ON public.users USING btree (registration_source);
 
 
 --
--- TOC entry 4857 (class 1259 OID 42583)
--- Name: idx_users_role; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4879 (class 1259 OID 42583)
+-- Name: idx_users_role; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_users_role ON public.users USING btree (role);
 
 
 --
--- TOC entry 4897 (class 1259 OID 42750)
--- Name: uq_qrcode_central; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4937 (class 1259 OID 43081)
+-- Name: uq_department_groups_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_department_groups_name ON public.department_groups USING btree (lower(TRIM(BOTH FROM name)));
+
+
+--
+-- TOC entry 4919 (class 1259 OID 42750)
+-- Name: uq_qrcode_central; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX uq_qrcode_central ON public.qrcodes USING btree (type) WHERE (type = 'central'::public.qrcode_type);
 
 
 --
--- TOC entry 4898 (class 1259 OID 42749)
--- Name: uq_qrcode_department; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 4920 (class 1259 OID 42749)
+-- Name: uq_qrcode_department; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX uq_qrcode_department ON public.qrcodes USING btree (department_id) WHERE (type = 'department'::public.qrcode_type);
 
 
 --
--- TOC entry 4919 (class 2606 OID 42726)
--- Name: answers answers_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4951 (class 2606 OID 42726)
+-- Name: answers answers_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.answers
@@ -846,8 +926,8 @@ ALTER TABLE ONLY public.answers
 
 
 --
--- TOC entry 4920 (class 2606 OID 42721)
--- Name: answers answers_response_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4952 (class 2606 OID 42721)
+-- Name: answers answers_response_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.answers
@@ -855,8 +935,53 @@ ALTER TABLE ONLY public.answers
 
 
 --
--- TOC entry 4922 (class 2606 OID 42945)
--- Name: password_reset_otps password_reset_otps_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4957 (class 2606 OID 42983)
+-- Name: department_central_question_settings department_central_question_settings_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.department_central_question_settings
+    ADD CONSTRAINT department_central_question_settings_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.departments(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4958 (class 2606 OID 42988)
+-- Name: department_central_question_settings department_central_question_settings_survey_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.department_central_question_settings
+    ADD CONSTRAINT department_central_question_settings_survey_id_fkey FOREIGN KEY (survey_id) REFERENCES public.surveys(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4955 (class 2606 OID 42964)
+-- Name: department_central_questions department_central_questions_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.department_central_questions
+    ADD CONSTRAINT department_central_questions_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.departments(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4956 (class 2606 OID 42969)
+-- Name: department_central_questions department_central_questions_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.department_central_questions
+    ADD CONSTRAINT department_central_questions_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4938 (class 2606 OID 43082)
+-- Name: departments departments_department_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.departments
+    ADD CONSTRAINT departments_department_group_id_fkey FOREIGN KEY (department_group_id) REFERENCES public.department_groups(id) ON DELETE RESTRICT;
+
+
+--
+-- TOC entry 4954 (class 2606 OID 42945)
+-- Name: password_reset_otps password_reset_otps_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.password_reset_otps
@@ -864,8 +989,8 @@ ALTER TABLE ONLY public.password_reset_otps
 
 
 --
--- TOC entry 4921 (class 2606 OID 42744)
--- Name: qrcodes qrcodes_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4953 (class 2606 OID 42744)
+-- Name: qrcodes qrcodes_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.qrcodes
@@ -873,8 +998,8 @@ ALTER TABLE ONLY public.qrcodes
 
 
 --
--- TOC entry 4912 (class 2606 OID 42656)
--- Name: questions questions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4944 (class 2606 OID 42656)
+-- Name: questions questions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.questions
@@ -882,8 +1007,8 @@ ALTER TABLE ONLY public.questions
 
 
 --
--- TOC entry 4913 (class 2606 OID 42651)
--- Name: questions questions_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4945 (class 2606 OID 42651)
+-- Name: questions questions_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.questions
@@ -891,8 +1016,8 @@ ALTER TABLE ONLY public.questions
 
 
 --
--- TOC entry 4914 (class 2606 OID 42646)
--- Name: questions questions_survey_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4946 (class 2606 OID 42646)
+-- Name: questions questions_survey_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.questions
@@ -900,8 +1025,8 @@ ALTER TABLE ONLY public.questions
 
 
 --
--- TOC entry 4915 (class 2606 OID 42690)
--- Name: responses responses_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4947 (class 2606 OID 42690)
+-- Name: responses responses_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.responses
@@ -909,8 +1034,8 @@ ALTER TABLE ONLY public.responses
 
 
 --
--- TOC entry 4916 (class 2606 OID 42700)
--- Name: responses responses_respondent_token_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4948 (class 2606 OID 42700)
+-- Name: responses responses_respondent_token_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.responses
@@ -918,8 +1043,8 @@ ALTER TABLE ONLY public.responses
 
 
 --
--- TOC entry 4917 (class 2606 OID 42695)
--- Name: responses responses_slot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4949 (class 2606 OID 42695)
+-- Name: responses responses_slot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.responses
@@ -927,8 +1052,8 @@ ALTER TABLE ONLY public.responses
 
 
 --
--- TOC entry 4918 (class 2606 OID 42685)
--- Name: responses responses_survey_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4950 (class 2606 OID 42685)
+-- Name: responses responses_survey_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.responses
@@ -936,8 +1061,8 @@ ALTER TABLE ONLY public.responses
 
 
 --
--- TOC entry 4910 (class 2606 OID 42628)
--- Name: survey_time_slots survey_time_slots_slot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4942 (class 2606 OID 42628)
+-- Name: survey_time_slots survey_time_slots_slot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.survey_time_slots
@@ -945,8 +1070,8 @@ ALTER TABLE ONLY public.survey_time_slots
 
 
 --
--- TOC entry 4911 (class 2606 OID 42623)
--- Name: survey_time_slots survey_time_slots_survey_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4943 (class 2606 OID 42623)
+-- Name: survey_time_slots survey_time_slots_survey_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.survey_time_slots
@@ -954,8 +1079,8 @@ ALTER TABLE ONLY public.survey_time_slots
 
 
 --
--- TOC entry 4909 (class 2606 OID 42598)
--- Name: surveys surveys_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4941 (class 2606 OID 42598)
+-- Name: surveys surveys_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.surveys
@@ -963,8 +1088,8 @@ ALTER TABLE ONLY public.surveys
 
 
 --
--- TOC entry 4907 (class 2606 OID 42578)
--- Name: users users_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4939 (class 2606 OID 42578)
+-- Name: users users_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -972,17 +1097,19 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 4908 (class 2606 OID 42573)
--- Name: users users_role_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 4940 (class 2606 OID 42573)
+-- Name: users users_role_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_role_fkey FOREIGN KEY (role) REFERENCES public.roles(code);
 
 
--- Completed on 2026-05-01 23:27:32
+-- Completed on 2026-07-18 15:26:02
 
 --
 -- PostgreSQL database dump complete
 --
+
+\unrestrict N9WiTRCRmzsvPigZzBtEzeU1k0XctIGPpkKa8TTWavsJnNhhrOkero62b7mU3va
 

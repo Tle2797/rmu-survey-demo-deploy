@@ -1,21 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ComponentType, type CSSProperties, type SVGProps } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+  type CSSProperties,
+  type SVGProps,
+} from "react";
 import {
   Building2,
   CircleAlert,
   CircleCheck,
   CircleX,
+  ListChecks,
   QrCode,
   Search,
 } from "lucide-react";
+import OverviewCard from "@/app/components/overview-card";
 import { apiGet } from "@/lib/api";
 
 type DepartmentRow = {
   id: number;
   name: string;
   is_active: boolean;
+  department_group_id: number;
+  department_group_name: string;
+  department_group_display_order: number;
   qrcode_id: number | null;
   qr_image_path: string | null;
   qr_link_target: string | null;
@@ -101,7 +113,7 @@ function getStatusFilterStyle(status: StatusFilter): CSSProperties {
 }
 
 function KpiCard({
-  icon: Icon,
+  icon,
   title,
   value,
   sub,
@@ -116,26 +128,14 @@ function KpiCard({
   iconClass?: string;
 }) {
   return (
-    <div
-      className={`relative min-h-[112px] overflow-hidden rounded-[28px] border p-5 backdrop-blur-sm transition-transform duration-200 hover:-translate-y-0.5 ${cardClass}`}
-    >
-      <div className="relative flex items-center gap-4">
-        <div
-          className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${iconClass} text-white shadow-[0_10px_24px_rgba(15,23,42,0.12)] ring-1 ring-white/35`}
-          aria-hidden="true"
-        >
-          <Icon className="h-6 w-6" strokeWidth={2.25} />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium leading-5 text-slate-600">{title}</div>
-          <div className="mt-1 text-3xl font-black leading-none tracking-tight text-slate-900">
-            {typeof value === "number" ? value.toLocaleString("th-TH") : value}
-          </div>
-          {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
-        </div>
-      </div>
-    </div>
+    <OverviewCard
+      icon={icon}
+      title={title}
+      value={value}
+      sub={sub}
+      cardClass={cardClass}
+      iconClass={iconClass}
+    />
   );
 }
 
@@ -150,32 +150,6 @@ function StatusBadge({ active }: { active: boolean }) {
       <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
       ปิดใช้งาน
     </span>
-  );
-}
-
-function DepartmentCard({ department }: { department: DepartmentRow }) {
-  return (
-    <Link
-      href={`/admin/questions/departments/${department.id}`}
-      className="group block rounded-2xl border border-slate-200 bg-white p-4 transition duration-200 hover:-translate-y-0.5 hover:border-sky-200 hover:bg-sky-50/60 hover:shadow-[0_14px_24px_rgba(37,99,235,0.08)]"
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.16)]">
-          <Building2 className="h-5 w-5" />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="whitespace-normal break-words text-sm font-semibold leading-5 text-slate-900">
-                {department.name}
-              </div>
-            </div>
-            <StatusBadge active={department.is_active} />
-          </div>
-        </div>
-      </div>
-    </Link>
   );
 }
 
@@ -196,14 +170,7 @@ function LoadingSkeleton() {
           ))}
         </div>
         <div className="h-24 rounded-[28px] border border-white/70 bg-white/90 shadow-[0_16px_40px_rgba(37,99,235,0.08)]" />
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {[...Array(6)].map((_, index) => (
-            <div
-              key={`department-skeleton-${index}`}
-              className="h-28 rounded-2xl border border-white/70 bg-white/90 shadow-[0_16px_40px_rgba(37,99,235,0.08)]"
-            />
-          ))}
-        </div>
+        <div className="h-[430px] rounded-[28px] border border-white/70 bg-white/90 shadow-[0_16px_40px_rgba(37,99,235,0.08)]" />
       </div>
     </main>
   );
@@ -215,6 +182,7 @@ export default function AdminDepartmentQuestionsPage() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     let active = true;
@@ -245,7 +213,11 @@ export default function AdminDepartmentQuestionsPage() {
 
     const keyword = query.trim().toLowerCase();
     if (keyword) {
-      list = list.filter((department) => department.name.toLowerCase().includes(keyword));
+      list = list.filter(
+        (department) =>
+          department.name.toLowerCase().includes(keyword) ||
+          department.department_group_name.toLowerCase().includes(keyword),
+      );
     }
 
     if (statusFilter === "active") {
@@ -258,6 +230,41 @@ export default function AdminDepartmentQuestionsPage() {
 
     return list;
   }, [departments, query, statusFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, statusFilter]);
+
+  const groupedDepartments = useMemo(() => {
+    const groups: DepartmentRow[][] = [];
+
+    for (const department of filteredDepartments) {
+      const currentGroup = groups[groups.length - 1];
+      const currentGroupId = currentGroup?.[0]?.department_group_id;
+
+      if (
+        currentGroup === undefined ||
+        Number(currentGroupId) !== Number(department.department_group_id)
+      ) {
+        groups.push([department]);
+      } else {
+        currentGroup.push(department);
+      }
+    }
+
+    return groups;
+  }, [filteredDepartments]);
+
+  const totalPages = Math.max(1, groupedDepartments.length);
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
+  const paginatedDepartments = useMemo(() => {
+    return groupedDepartments[safeCurrentPage - 1] ?? [];
+  }, [groupedDepartments, safeCurrentPage]);
 
   const total = departments.length;
   const activeCount = departments.filter((department) => department.is_active).length;
@@ -344,7 +351,7 @@ export default function AdminDepartmentQuestionsPage() {
             </div>
           </div>
 
-        <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:px-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:px-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-end">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -381,36 +388,97 @@ export default function AdminDepartmentQuestionsPage() {
             </div>
           </div>
 
-          <div className="px-5 pb-5 sm:px-6">
-            {loading && departments.length === 0 ? (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {[...Array(6)].map((_, index) => (
-                  <div
-                    key={`department-card-skeleton-${index}`}
-                    className="h-28 rounded-2xl border border-slate-200 bg-slate-50"
-                  />
-                ))}
+          {paginatedDepartments.length > 0 ? (
+            <div className="px-5 py-3 text-sm font-normal text-slate-900 sm:px-6">
+              {paginatedDepartments[0]?.department_group_name}
+            </div>
+          ) : null}
+
+          <div className="overflow-x-auto">
+            <table className="min-w-[720px] w-full border-collapse text-[13px]">
+              <thead className="bg-gradient-to-r from-sky-600 via-blue-600 to-blue-700 text-white">
+                <tr className="border-b border-blue-700/30">
+                  <th className="w-[90px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
+                    ลำดับ
+                  </th>
+                  <th className="border-r border-white/20 px-4 py-3.5 text-center text-sm font-bold">
+                    ชื่อหน่วยงาน
+                  </th>
+                  <th className="w-[170px] border-r border-white/20 px-3 py-3.5 text-center text-sm font-bold">
+                    สถานะการใช้งาน
+                  </th>
+                  <th className="w-[240px] px-3 py-3.5 text-center text-sm font-bold">
+                    ข้อมูลคำถาม
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {paginatedDepartments.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-slate-500" colSpan={4}>
+                      {departments.length === 0
+                        ? "ไม่พบข้อมูลหน่วยงาน"
+                        : query.trim()
+                          ? "ไม่พบหน่วยงานที่ค้นหา"
+                          : "ไม่พบหน่วยงานตามตัวกรองนี้"}
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedDepartments.map((department, index) => (
+                        <tr
+                          key={department.id}
+                          className="border-b border-sky-100 transition last:border-b-0 hover:bg-sky-50/50"
+                        >
+                          <td className="border-r border-sky-100 px-3 py-3.5 text-center text-slate-500">
+                            {index + 1}
+                          </td>
+                          <td className="border-r border-sky-100 px-4 py-3.5 font-normal text-slate-900">
+                            {department.name}
+                          </td>
+                          <td className="border-r border-sky-100 px-3 py-3.5 text-center">
+                            <StatusBadge active={department.is_active} />
+                          </td>
+                          <td className="px-3 py-3.5 text-center">
+                            <Link
+                              href={`/admin/questions/departments/${department.id}`}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-500 bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-blue-600 hover:to-blue-700"
+                            >
+                              <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
+                              ดูคำถามหน่วยงาน
+                            </Link>
+                          </td>
+                        </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end border-t border-sky-100 bg-sky-50/30 px-4 py-3">
+            <div className="flex items-center gap-2 sm:ml-auto">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={safeCurrentPage <= 1}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
+              >
+                ย้อนกลับ
+              </button>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
+                กลุ่ม {groupedDepartments.length === 0 ? 0 : safeCurrentPage} / {groupedDepartments.length}
               </div>
-            ) : filteredDepartments.length === 0 ? (
-              <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
-                <div className="max-w-xs">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                    <Building2 className="h-5 w-5" />
-                  </div>
-                  <div className="mt-4 text-base font-semibold text-slate-900">
-                    {query.trim()
-                      ? "ไม่พบหน่วยงานที่ค้นหา"
-                      : "ไม่พบหน่วยงานตามตัวกรองนี้"}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {filteredDepartments.map((department) => (
-                  <DepartmentCard key={department.id} department={department} />
-                ))}
-              </div>
-            )}
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentPage((page) => Math.min(totalPages, page + 1))
+                }
+                disabled={safeCurrentPage >= totalPages}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
+              >
+                ถัดไป
+              </button>
+            </div>
           </div>
         </section>
       </div>

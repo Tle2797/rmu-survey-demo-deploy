@@ -17,6 +17,17 @@ function parseYearBe(value: unknown) {
   return year;
 }
 
+function getCurrentYearBe() {
+  const currentYearCe = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+    }).format(new Date()),
+  );
+
+  return currentYearCe + 543;
+}
+
 function isDuplicateSurveyYearError(error: any) {
   return (
     error?.code === "23505" &&
@@ -168,14 +179,22 @@ export async function updateSurvey({ params, body, set }: any) {
 
   let upd;
   try {
+    const currentYearBe = getCurrentYearBe();
     upd = await db.query(
       `
       UPDATE surveys
       SET title = $2, description = $3, year_be = $4, updated_at = NOW()
       WHERE id = $1
+        AND (is_active = false OR $4 >= $5)
       RETURNING id, year_be, title, description, is_active, created_at, updated_at
       `,
-      [id, trimmedTitle, normalizeDescription(description), parsedYearBe],
+      [
+        id,
+        trimmedTitle,
+        normalizeDescription(description),
+        parsedYearBe,
+        currentYearBe,
+      ],
     );
   } catch (error: any) {
     if (isDuplicateSurveyYearError(error)) {
@@ -187,6 +206,16 @@ export async function updateSurvey({ params, body, set }: any) {
   }
 
   if ((upd.rowCount ?? 0) === 0) {
+    const existing = await db.query(`SELECT id FROM surveys WHERE id = $1 LIMIT 1`, [
+      id,
+    ]);
+    if ((existing.rowCount ?? 0) > 0) {
+      set.status = 409;
+      return {
+        message: `ไม่สามารถกำหนดแบบสอบถามที่เปิดใช้งานเป็นปีย้อนหลังได้ กรุณาปิดใช้งานก่อน (พ.ศ. ปัจจุบัน ${getCurrentYearBe()})`,
+      };
+    }
+
     set.status = 404;
     return { message: "Survey not found" };
   }
@@ -206,7 +235,7 @@ export async function toggleSurveyActive({ params, set }: any) {
     await client.query("BEGIN");
 
     const cur = await client.query(
-      `SELECT is_active FROM surveys WHERE id = $1 FOR UPDATE`,
+      `SELECT is_active, year_be FROM surveys WHERE id = $1 FOR UPDATE`,
       [id],
     );
 
@@ -217,6 +246,16 @@ export async function toggleSurveyActive({ params, set }: any) {
     }
 
     const next = !Boolean(cur.rows[0].is_active);
+    const surveyYearBe = Number(cur.rows[0].year_be);
+    const currentYearBe = getCurrentYearBe();
+
+    if (next && surveyYearBe < currentYearBe) {
+      await client.query("ROLLBACK");
+      set.status = 409;
+      return {
+        message: `ไม่สามารถเปิดแบบสอบถามปีการศึกษา ${surveyYearBe} ได้ เนื่องจากเป็นปีย้อนหลัง พ.ศ. ปัจจุบันคือ ${currentYearBe}`,
+      };
+    }
 
     if (next) {
       await client.query(
