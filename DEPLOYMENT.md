@@ -29,3 +29,16 @@ placeholder with values created for the demo environment.
 
 The PostgreSQL schema in `db_survey.sql` must be imported before the backend
 starts for the first time.
+
+## Initialize the demo database
+
+1. Copy `backend/.env.bootstrap.example` to
+   `backend/.env.bootstrap.local`.
+2. Add the new database's external URL and choose the initial admin credentials.
+3. From the `backend` directory, run:
+
+```bash
+bun run bootstrap:demo
+```
+
+The local bootstrap file is ignored by Git and must never be committed.

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun --watch src/server.ts",
     "start": "bun src/server.ts",
+    "bootstrap:demo": "bun scripts/bootstrap_demo.ts",
     "migrate:department-qr-links": "bun scripts/migrate_department_qr_links.ts"
   },
   "devDependencies": {
