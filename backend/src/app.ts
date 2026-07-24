@@ -31,7 +31,7 @@ import { dashboardReportsRoute } from "./routes/dashboard.reports.route";
 
 const defaultCorsOrigins = [
   "http://localhost:3000",
-  "https://tle2797-rmu-system-demo.vercel.app",
+  "http://localhost:3481",
 ];
 
 const corsOrigins = (process.env.CORS_ORIGINS || defaultCorsOrigins.join(","))
