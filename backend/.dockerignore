@@ -1,20 +1,25 @@
 node_modules
 dist
 build
+out
 coverage
 .cache
 .eslintcache
 *.log
 *.tsbuildinfo
+logs
 
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+
+*.backup
+*.dump
+*.sql.gz
 
 .git
 .gitignore
 .vscode
 .idea
-
+.DS_Store
+Thumbs.db
