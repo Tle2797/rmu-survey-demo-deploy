@@ -19,8 +19,14 @@ if (!adminUsername || !adminPassword) {
   throw new Error(`ADMIN_USERNAME and ADMIN_PASSWORD are required in ${envFile}`);
 }
 
-if (adminPassword.length < 12) {
-  throw new Error("ADMIN_PASSWORD must contain at least 12 characters");
+if (
+  adminPassword.length < 12 ||
+  adminPassword.startsWith("CHOOSE_") ||
+  adminPassword.startsWith("replace-")
+) {
+  throw new Error(
+    "ADMIN_PASSWORD must contain at least 12 characters and must not be a placeholder",
+  );
 }
 
 const requiredAdminUsername = adminUsername;

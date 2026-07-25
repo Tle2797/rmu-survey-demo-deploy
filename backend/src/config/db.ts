@@ -101,6 +101,83 @@ export async function ensureUserApprovalColumns() {
     `);
 }
 
+export async function ensureDepartmentGroups() {
+    const client = await db.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS department_groups (
+                id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                name text NOT NULL,
+                display_order integer NOT NULL DEFAULT 0,
+                is_active boolean NOT NULL DEFAULT true,
+                created_at timestamp with time zone NOT NULL DEFAULT now(),
+                updated_at timestamp with time zone NOT NULL DEFAULT now()
+            )
+        `);
+
+        await client.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_department_groups_name
+            ON department_groups (lower(trim(name)))
+        `);
+
+        await client.query(`
+            ALTER TABLE departments
+            ADD COLUMN IF NOT EXISTS department_group_id bigint
+        `);
+
+        await client.query(`
+            INSERT INTO department_groups (name, display_order, is_active)
+            SELECT 'ยังไม่จัดกลุ่ม', 0, true
+            WHERE NOT EXISTS (SELECT 1 FROM department_groups)
+        `);
+
+        await client.query(`
+            UPDATE departments
+            SET department_group_id = (
+                SELECT id
+                FROM department_groups
+                ORDER BY display_order ASC, id ASC
+                LIMIT 1
+            )
+            WHERE department_group_id IS NULL
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_departments_department_group
+            ON departments (department_group_id)
+        `);
+
+        await client.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'departments_department_group_id_fkey'
+                      AND conrelid = 'departments'::regclass
+                ) THEN
+                    ALTER TABLE departments
+                    ADD CONSTRAINT departments_department_group_id_fkey
+                    FOREIGN KEY (department_group_id)
+                    REFERENCES department_groups(id)
+                    ON DELETE RESTRICT;
+                END IF;
+            END
+            $$;
+        `);
+
+        await client.query("COMMIT");
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
 export async function ensureDepartmentCentralQuestionTable() {
     await db.query(`
         CREATE TABLE IF NOT EXISTS department_central_questions (
