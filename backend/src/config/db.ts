@@ -2,14 +2,20 @@
 import {Pool} from "pg";
 import "./env";
 
+const databaseUrl = process.env.DATABASE_URL?.trim();
+
 // สร้าง connection pool
-export const db = new Pool({
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT),
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-});
+export const db = new Pool(
+    databaseUrl
+        ? { connectionString: databaseUrl }
+        : {
+            host: process.env.DB_HOST,
+            port: Number(process.env.DB_PORT),
+            user: process.env.DB_USER,
+            password: process.env.DB_PASSWORD,
+            database: process.env.DB_NAME,
+        },
+);
 
 // ทดสอบการเชื่อมต่อ
 db.on("connect", () => {
